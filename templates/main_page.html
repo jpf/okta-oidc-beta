@@ -1,0 +1,47 @@
+
+{% extends "base.html" %}
+{% block body %}
+      <div class="row">
+        <div class="col-md-6">
+          <p>
+          This is a demonstration of how to use Okta to handle authentication for a server side application.
+          </p>
+          <!-- Source: http://openclipart.org/detail/34273/tango-system-lock-screen-by-warszawianka -->
+          <img src="/static/locked-screen.png" alt="Locked computer screen"/>
+        </div>
+        <div class="col-md-6">
+          <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
+        </div>
+      </div>
+{% endblock %}
+{% block javascript %}
+      <script>
+        function setupOktaSignIn(baseUrl, clientId) {
+            var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
+            return new OktaSignIn({
+                baseUrl: baseUrl,
+                clientId: clientId,
+                redirectUri: redirectUri,
+                authScheme: 'OAUTH2',
+                authParams: {
+                    responseType: 'id_token',
+                    scope: ['openid']
+                }
+            });
+        };
+        var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
+
+        oktaSignIn.renderEl(
+          { el: '#okta-sign-in-widget' },
+         function (res) {
+            console.log(res);
+            if (res.status === 'SUCCESS') {
+              $.post("/login", {"id_token": res.idToken}, function(data) {
+                window.location.href="/secret";
+              });
+            }
+          },
+         function (err) { console.log('Unexpected error authenticating user: %o', err); }
+        );
+      </script>
+{% endblock %}

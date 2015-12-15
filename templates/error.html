@@ -1,0 +1,23 @@
+
+{% extends "base.html" %}
+{% block body %}
+    <div class="container">
+      <div>
+        <h1>Error</h1>
+      </div>
+      This application is missing required configuration variables, please set the following environment variables:
+      <div class="row">
+        <div class="col-md-12">
+	  <ul>
+	    {% for key in required %}
+	    <li style="margin-top: 10px">
+	      <p style="text-transform: uppercase">{{key}}</p>
+	      This is {{required[key]['description']}}, it should look like this:
+	      "{{required[key]['example']}}"
+	    </li>
+	    {% endfor %}
+	  </ul>
+	</div>
+      </div>
+    </div>
+{% endblock %}

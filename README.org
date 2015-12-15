@@ -1,0 +1,893 @@
+# This is a file written in Emacs and authored using org-mode (http://orgmode.org/)
+# The "README.md" file is generated from this file by running the
+# "M-x org-md-export-to-markdown" command from inside of Emacs.
+# 
+# The rest of the files are generated from this file by running the
+# "M-x org-babel-tangle" command from inside of Emacs.
+# 
+# The options below control the behavior of org-md-export-to-markdown:
+#
+# Don't render a Table of Contents 
+#+OPTIONS: toc:nil
+# Don't render section numbers
+#+OPTIONS: num:nil
+# Turn of subscript parsing: http://super-user.org/wordpress/2012/02/02/how-to-get-rid-of-subscript-annoyance-in-org-mode/comment-page-1/
+#+OPTIONS: ^:{}
+* Introduction
+  Thank you for participating in Okta's OpenID Connect (OIDC) Beta.
+
+  In this document, we will show you how to get started using OpenID
+  Connect with Okta. 
+
+  Specifically demonstrated are the following two use-cases:
+  1. Using OpenID Connect to authenticate Okta users to a backend
+     web server (If your familiar with SAML, this is roughly
+     equivalent to "SP-initiated SAML").
+  2. Using OpenID Connect with a JavaScript Single Page Application.
+
+  If you have any questions, comments, or suggestions for this
+  document please contact Joël Franusic <joel.franusic@okta.com>
+* Deploy to Heroku 						   :noexport:
+** TODO Add a "Deploy to Heroku" button here!
+* Prerequisites
+  All examples in this guide assume that you have an Okta org, API
+  token, and Okta OAuth Client ID. 
+
+  Running the code samples locally will require the use of Python and
+  the [[https://en.wikipedia.org/wiki/Pip_%28package_manager%29][pip]] package manager.
+
+  Here is how to get those things if you do not have them already:
+** Okta org
+  If you do not have an Okta org, you can [[https://www.okta.com/developer/signup/][sign up for a free Developer
+  Edition Okta org]].
+** Okta API token
+  If you do not have an API token, follow our guide for
+  [[http://developer.okta.com/docs/api/getting_started/getting_a_token.html][getting a token]].
+** Okta OAuth Client ID
+   At the moment, the only way to register an OAuth client with Okta
+   is via Okta's =/oauth2/= API endpoint.
+
+   The recommended method of doing this is via [[http://developer.okta.com/docs/api/getting_started/api_test_client.html][Postman]], using this
+   Postman Collection for Okta's [[https://beta.getpostman.com/collections/2bece1641e75a7d4a222][Client Registration API endpoint]].
+
+   Use the "Create OAuth Client" template in Postman, replacing data in the
+   sections as appropriate for your situation. The most important
+   value to change in the example JSON payload is the value for the
+   =redirect_uris= key. 
+
+   It isn't required, but we suggest that
+   you also change the values for the =client_name=, =client_uri=, =logo_uri=, and =jwks_uri= keys.
+
+   Here is an example HTTP request to create an Okta OAuth client via
+   the =/oauth2/= API endpoint:
+   #+BEGIN_EXAMPLE
+     POST /oauth2/v1/clients HTTP/1.1
+     Host: example.okta.com
+     Accept: application/json
+     Content-Type: application/json
+     Authorization: SSWS 01A2bcDefGhI34JKlmnOp5qRstUVWXy6ZABCdefgHi
+
+     {
+         "client_name": "Example Okta OAuth Client",
+         "client_uri": "https://example.com",
+         "logo_uri": "https://static.example.com/logo.png",
+         "redirect_uris": [
+              "https://example.com/oauth/callback1",
+              "https://example.com/oauth/callback2"
+         ],
+         "response_types": [
+              "code",
+              "token",
+              "id_token"
+         ],
+         "grant_types": [
+              "authorization_code",
+              "implicit"
+         ],
+         "token_endpoint_auth_method": "private_key_jwt",
+         "jwks_uri": "https://static.example.com/certs/public.jwks"
+     }
+   #+END_EXAMPLE
+** Python
+   To run the code samples in this project you will need a working
+   copy of Python 2.7+ and the pip package manager. See this guide on
+   "[[http://docs.python-guide.org/en/latest/starting/installation/][Properly Installing Python]]"  for instructions for setting up
+   Python on your system.
+* Setup
+  Once you have all the prerequisites, the next step will be do get
+  this example code running. You can either run this code from your
+  local machine, or by running the code from Heroku.
+
+* Make a local copy of this repository
+  Before you can make use of the code in this guide, you will need a
+  local copy of the code to work from. You can either download a copy
+  of this repository using the "Download ZIP" button or using the =git
+  clone= command.
+
+  Using =git clone= is the suggested method for making a local copy of
+  this repository, because getting updates to this repository will be
+  as easy as running =git pull origin master=.
+* Running on your local machine
+  With a local copy of this repository on your machine, the next step
+  will be to set up the project.
+
+  You can do this on Mac OS X and Linux by running these commands from the shell:
+
+  #+BEGIN_EXAMPLE
+    $ virtualenv venv
+    $ source venv/bin/activate
+    $ pip install -r requirements.txt
+  #+END_EXAMPLE
+
+  If you are using Homebrew on OS X, you /might/ need to follow the
+  [[http://cryptography.readthedocs.org/en/latest/installation/#building-cryptography-on-os-x][Homebrew specific installation instructions]] to install the Python =cryptography= library:
+  #+BEGIN_EXAMPLE
+    $ env CRYPTOGRAPHY_OSX_NO_LINK_FLAGS=1 LDFLAGS="$(brew --prefix openssl)/lib/libssl.a $(brew --prefix openssl)/lib/libcrypto.a" CFLAGS="-I$(brew --prefix openssl)/include" pip install cryptography
+  #+END_EXAMPLE
+
+  On OS X or Linux, *replace the example values in the commands below
+  with your data* and then run the modified commands in your shell to
+  configure the application:
+  #+BEGIN_EXAMPLE
+    $ export OKTA_API_TOKEN=00A0B12CDefGHijkLmN3OPQRsTu4VWxyzABCdEf56G
+    $ export OKTA_BASE_URL=https://example.okta.com
+    $ export OKTA_CLIENT_ID=aBcDEfG0HiJkL1mn2oP3
+  #+END_EXAMPLE
+
+  Use this command to run the application locally on your system:
+  #+BEGIN_EXAMPLE
+    $ python app.py
+  #+END_EXAMPLE
+* Running on Heroku
+  Assuming that you've already installed the
+  [[https://toolbelt.heroku.com/][Heroku Toolbelt]], here are the commands you'd use to deploy this
+  application to Heroku:
+  #+BEGIN_EXAMPLE
+    $ heroku create
+    $ git push heroku master
+  #+END_EXAMPLE
+
+  Then, configure the application using these commands below. 
+  *Make sure to replace the values below with your data!*
+  #+BEGIN_EXAMPLE
+    $ heroku config:set OKTA_API_TOKEN=00A0B12CDefGHijkLmN3OPQRsTu4VWxyzABCdEf56G
+    $ heroku config:set OKTA_BASE_URL=https://example.okta.com
+    $ heroku config:set OKTA_CLIENT_ID=aBcDEfG0HiJkL1mn2oP3
+  #+END_EXAMPLE
+
+  Finally:
+  #+BEGIN_EXAMPLE
+    $ heroku open
+  #+END_EXAMPLE
+  
+* How it works
+  The core of using Open ID Connect with your application is the
+  =id_token=, which is a JSON Web Token (JWT).
+
+  Below is an example of what a JWT looks like:
+  #+BEGIN_EXAMPLE
+    eyJhbGciOiJSUzI1NiJ9.eyJ2ZXIiOjEsImlzcyI6Imh0dHBzOi8vZXhhbXBsZS5va3RhLmNvbSIsIn
+    N1YiI6IjAwdTBhYmNkZWZHSElKS0xNTk9QIiwibG9naW4iOiJ1c2VybmFtZUBleGFtcGxlLmNvbSIsI
+    mF1ZCI6IkFiY0RFMGZHSEkxamsyTE0zNG5vIiwiaWF0IjoxNDQ5Njk1NjAwLCJleHAiOjE0NDk2OTky
+    MDAsImFtciI6WyJwd2QiXSwiYXV0aF90aW1lIjoxNDQ5Njk1NjAwfQ.btq43W2-SOsc7BA_SyMPEKcu
+    2xUYoyLuY948k6tWzZAsy__MndK9pX3WjYYMwkGqfthLjMWXMuYem2-uWcdwfDCDpWoxK4Es3N8dnsQ
+    NeS_U0_FfVZfkj_OMGw28RPDLRErNAuyXFj2DegXUh74PEZcDaKSz5-17znEpXgzbT14
+  #+END_EXAMPLE
+  *Note:* The line breaks have been added for readability.
+
+  A JWT is, essentially, a base64 encoded JSON object. Here is what
+  the JWT above looks like after it has been decoded and validated:
+  #+BEGIN_SRC javascript
+    {
+      "ver": 1,
+      "iss": "https://example.okta.com",
+      "sub": "00u0abcdefGHIJKLMNOP",
+      "login": "username@example.com",
+      "aud": "AbcDE0fGHI1jk2LM34no",
+      "iat": 1449695600,
+      "exp": 1449699200,
+      "amr": [
+        "pwd"
+      ],
+      "auth_time": 1449695600
+    }
+  #+END_SRC
+* Getting an id_token from Okta
+  The easiest way to get an =id_token= from Okta is to use the Okta
+  Sign-In Widget. Here is how to configure the Okta Sign-In Widget
+  to give you an =id_token=:
+  #+NAME: setup-okta-sign-in
+  #+BEGIN_SRC javascript
+    function setupOktaSignIn(baseUrl, clientId) {
+        var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
+        return new OktaSignIn({
+            baseUrl: baseUrl,
+            clientId: clientId,
+            redirectUri: redirectUri,
+            authScheme: 'OAUTH2',
+            authParams: {
+                responseType: 'id_token',
+                scope: ['openid']
+            }
+        });
+    };
+  #+END_SRC
+  Note: Other valid types for =authParams.scope= are: =openid=,
+  =email=, =profile=, =address=, =phone=. 
+** TODO Add =groups= when appropriate				   :noexport:
+** TODO How to add Social Login buttons				   :noexport:
+  #+BEGIN_SRC javascript :exports none
+    function setupOktaSignIn(baseUrl, clientId) {
+	var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
+	return new OktaSignIn({
+	    baseUrl: baseUrl,
+	    clientId: clientId,
+	    redirectUri: redirectUri,
+	    authScheme: 'OAUTH2',
+	    authParams: {
+		responseType: 'id_token',
+		scope: [ 'openid' ]
+	    },
+	    idps: [
+		{
+		  'type': 'FACEBOOK',
+		  'id': '0FAKE0FAKE'
+		}
+	    ]
+	});
+    };
+  #+END_SRC
+* Use cases
+  The OpenID Connect specification makes provisions for many different
+  use cases. For this beta, we are support two use cases:
+
+  1. Server-side web application
+     Authenticating against a web application that runs on a server.
+  2. Single Page Application
+     Authenticating a client-side JavaScript application that runs in
+     a web browser.
+
+** Server-side web application 
+
+   This use case demonstrates how to have a server-side web
+   application authenticate users via OpenID Connect. If you are
+   familiar with SAML, this is the same use case as "SP initiated
+   SAML".
+
+   Validating a JWT is easy. Here is how to do it in Python using the
+   =pyjwt= Python library.
+   
+   (See [[http://jwt.io/#libraries-io][JWT.io]] for a list of JWT libraries in your favorite language.)
+
+   The =pyjwt= library handles a lot of ancillary JWT validation by
+   default. In particular, it validates the =audience= attribute,
+   which means that it will return an error unless the value
+   =audience= attribute matches what we pass into this method. Note
+   that Okta uses the OAuth Client ID as the audience in the
+   =id_token= JWTs that it issues.
+
+   #+NAME: parse-jwt
+   #+BEGIN_SRC python
+     def parse_jwt(token):
+         rv = jwt.decode(
+             token,
+             public_key,
+             algorithms='RS256',
+             audience=okta['client_id'])
+         return rv
+   #+END_SRC
+
+   Where does the =public_key= come from? It is fetched from the Okta
+   "JSON Web Key" endpoint.
+
+   The code below demonstrations how to fetch a public key to validate
+   a JWT from Okta, using the endpoint URL defined as part of the JWK
+   standard.
+
+   *Note:* This code pulls from the URL directly. It should really be
+   discovering that URL from the =.well-known= URL endpoint that is
+   used for discovery.
+   #+NAME: fetch-jwt-public-key
+   #+BEGIN_SRC python
+     def fetch_jwt_public_key(base_url=None):
+         if base_url is None:
+             raise Exception('base_url required')
+         jwks_url = "{}/oauth2/v1/keys".format(base_url)
+         r = requests.get(jwks_url)
+         jwks = r.json()
+         x5c = jwks['keys'][0]['x5c'][0]
+         pem_data = base64.b64decode(str(x5c))
+         cert = x509.load_der_x509_certificate(pem_data, default_backend())
+         return cert.public_key()
+   #+END_SRC
+
+** Single Page App
+
+   This use case demonstrates how to have a Single Page application
+   authenticate users via OpenID Connect.
+
+   The code in this example is contained in two static files:
+   =tempaltes/spa.html= for the HTML and =static/single-page.js= for
+   the application JavaScript.
+
+   The JavaScript used to demonstrate this use case is covered below:
+  
+   We start with the code used to initialize the Okta Sign-In Widget
+   in the =spa.html= file, Note that the ={{okta.base_url}}= and
+   ={{okta.client_id}}= strings are place holders for the [[http://jinja.pocoo.org/][Jinja2]]
+   templating engine that Flask uses to render the =spa.html=
+   template.
+    #+NAME: single-page-okta-config
+    #+BEGIN_SRC javascript :padline no
+      var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
+  
+      $(document).ready(function () {
+          renderOktaWidget();
+      });
+    #+END_SRC
+
+   The rest of the code used in this demonstration is contained in the
+   =single-page.js= file. 
+
+   This demonstration application is a very simplistic and
+   /unrealistic/ implementation of a Single Page Application. Instead
+   of using a framework [[https://angularjs.org/][Angular]], [[http://emberjs.com/][Ember]], or [[https://facebook.github.io/react/][React]], this examples uses
+   [[https://jquery.com/][jQuery]] to update the page.
+
+   (Using jQuery is easier to understand, but you /should not/ use jQuery
+   to write a production quality Single Page Application.)
+
+   The =single-page.js= file defines three functions:
+   - =renderOktaWidget()=
+     This handles rendering of the Okta widget.
+   - =renderLogin()=
+     What gets called when a user logs in with a =status= of
+     "=SUCCESS=".
+   - =renderLogout()=
+     What gets called when a user clicks a "Logout" button or link.
+
+   #+BEGIN_SRC javascript :tangle static/single-page.js :noweb yes :exports none
+     <<single-page-app-render-sign-in>>
+
+     <<single-page-app-render-login>>
+
+     <<single-page-app-render-logout>>
+   #+END_SRC
+
+   We will cover each function below.
+
+*** =renderOktaWidget()=
+
+    Below is the =renderOktaWidget()= function which calls the
+    =renderEl= ("render El"ement) method of
+    =oktaSignIn=. =renderEl= takes three arguments:
+    1. =widget-location-object=
+       A JavaScript object which contains the =id= of the HTML element
+       that should be turned into the Okta Sign-In Widget.
+    2. =widget-success-function= 
+       A function that is called on successful authentications.
+    3. =widget-error-function=
+       A function that is called when error conditions are encountered.
+
+    Here is what the =renderEl= function looks like at a high level:
+    #+NAME: single-page-app-render-sign-in
+    #+BEGIN_SRC javascript 
+      function renderOktaWidget() {
+          oktaSignIn.renderEl(
+              <<widget-location-object>>,
+              <<widget-success-function>>,
+              <<widget-failure-function>>
+          );
+      }
+    #+END_SRC
+
+    Let's cover each of those sections in detail:
+
+    First we define the =<<widget-location-object>>= section. In this section,
+    we pass in an =id= of "=okta-sign-in-widget=", which is the =id= for the =<div>= that we
+    want to contain the Okta Sign-In Widget.
+    #+NAME: widget-location-object
+    #+BEGIN_SRC javascript
+      { el: '#okta-sign-in-widget' }
+    #+END_SRC
+
+    Next, in the =<<widget-success-function>>= section, we pass in a
+    function that makes an
+    [[https://en.wikipedia.org/wiki/Ajax_(programming)][Ajax]] request to =/users/me= using the =id_token= in the
+    =Authorization= header, to validate the request. If everything
+    works as expected, then we call the =renderLogin()= function with
+    the user's Okta id as a parameter. 
+    
+    #+NAME: widget-success-function
+    #+BEGIN_SRC javascript
+      function (res) {
+          if (res.status === 'SUCCESS') {
+              console.log(res);
+              $.ajax({
+                  type: "GET",
+                  dataType: 'json',
+                  url: "/users/me",
+                  beforeSend: function(xhr) {
+                      xhr.setRequestHeader("Authorization", "Bearer " + res.idToken);
+                  },
+                  success: function(data){
+                      renderLogin(data.user_id);
+                  }
+              });
+          }
+      }
+    #+END_SRC
+
+    Lastly, we in the =<<widget-failure-function>>= section, which we
+    pass in a very simple error handling function that just calls
+    =console.log()= with the error message. This is only useful while
+    developing your custom logic for the Okta Sign-In Widget and you
+    will want to do something different in a production deployment.
+    #+NAME: widget-failure-function
+    #+BEGIN_SRC javascript
+      function (err) { console.log('Unexpected error authenticating user: %o', err); }
+
+    #+END_SRC
+
+*** =renderLogin()=
+
+    Below is an overview of what the =renderLogin()= function
+    does:
+    #+NAME: single-page-app-render-login
+    #+BEGIN_SRC javascript 
+      function renderLogin(user_id) {
+          <<display-log-out-message>>
+          <<display-logged-in-message>>
+          <<display-user-id>>
+      }
+    #+END_SRC
+
+    Here is what each of the sections above do:
+
+    First, in the =<<display-log-out-message>>= section, we add a "Log out" item
+    to the navbar, then register a =click= event for when the user
+    clicks on "Log out":
+    #+NAME: display-log-out-message
+    #+BEGIN_SRC javascript
+      $('#navbar > ul').empty().append('<li><a id="logout" href="/logout">Log out</a></li>');
+      $('#logout').click(function(event) {
+          event.preventDefault();
+          renderLogout();
+      });
+    #+END_SRC
+
+    Secondly, in the =<<display-logged-in-message>>= section, we hide the
+    "logged out" message and display the "logged in" message:
+    #+NAME: display-logged-in-message
+    #+BEGIN_SRC javascript
+      $('#logged-out-message').hide();
+      $('#logged-in-message').show();
+          
+    #+END_SRC
+
+    Lastly, in the =<<display-user-id>>= section, we hide the Okta Sign-In
+    Widget append the user's Okta ID into page, then show the part of
+    the page with the user's Okta ID:
+    #+NAME: display-user-id
+    #+BEGIN_SRC javascript
+      $('#okta-sign-in-widget').hide();
+      $('#okta-user-id').empty().append(user_id);
+      $('#logged-in-user-id').show();
+    #+END_SRC
+
+*** =renderLogout()=
+
+    The =renderLogout()= function is essentially the opposite of the
+    =renderLogin()=, it clears out the navigation bar with =empty=,
+    hides the "logged in" message and shows the "logged out" message,
+    hides the users Okta ID and shows the Okta Sign-In Widget. (This code
+    also clears out the password field in the sign-in widget).
+
+    #+NAME: single-page-app-render-logout
+    #+BEGIN_SRC javascript 
+      function renderLogout() {
+          $('#navbar > ul').empty();
+          $('#logged-in-message').hide();
+          $('#logged-out-message').show();
+          $('#logged-in-user-id').hide();
+          $('#okta-sign-in .okta-form-input-field input[type="password"]').val('');
+          $('#okta-sign-in-widget').show();
+      }
+    #+END_SRC
+* Code 								   :noexport:
+** app.py
+  #+NAME: imports
+  #+BEGIN_SRC python
+    import base64
+    import os
+
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from flask import Flask
+    from flask import render_template
+    from flask import request
+    from flask import redirect
+    from flask import url_for
+    from flask.ext.login import LoginManager
+    from flask.ext.login import current_user
+    from flask.ext.login import login_required
+    from flask.ext.login import login_user
+    from flask.ext.login import logout_user
+    import flask
+    import jwt
+    import requests
+  #+END_SRC
+
+  #+NAME: setup-flask-login-manager
+  #+BEGIN_SRC python
+    login_manager = LoginManager()
+    login_manager.setup_app(app)
+
+
+    class UserSession:
+        def __init__(self, user_id):
+            self.authenticated = True
+            self.user_id = user_id
+
+        def is_active(self):
+            # In this example, "active" and "authenticated" are the same thing
+            return self.authenticated
+
+        def is_authenticated(self):
+            # "Has the user authenticated?"
+            # See also: http://stackoverflow.com/a/19533025
+            return self.authenticated
+
+        def is_anonymous(self):
+            return not self.authenticated
+
+        def get_id(self):
+            return self.user_id
+
+
+    # Note that this loads users based on user_id
+    # which is stored in the browser cookie, I think
+    @login_manager.user_loader
+    def load_user(user_id):
+        # print "Loading user: " + user_id
+        return UserSession(user_id)
+  #+END_SRC
+
+  #+NAME: flask-app
+  #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
+    <<imports>>
+
+
+    app = Flask(__name__)
+
+    # NOTE: Change this to something else!
+    # FIXME: Change this to use os.environ.get
+    app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
+
+    required = {
+        'base_url': {
+            'description': 'the base URL for your Okta org',
+            'example': 'https://example.okta.com'
+        },
+        'api_token': {
+            'description': 'the API token for your Okta org',
+            'example': '01A2bCd3efGh-ij-4K-Lmn5OPqrSTuvwXYZaBCD6EF'
+        },
+        'client_id': {
+            'description': 'an OAuth Client ID for your Okta org',
+            'example': 'a0bcdEfGhIJkLmNOPQr1'
+        }
+    }
+
+    okta = {}
+    for key in required.keys():
+        env_key = "OKTA_" + key.upper()
+        okta[key] = os.environ.get(env_key)
+        if okta[key]:
+            del(required[key])
+
+
+    # Note: This will only work for one org
+    # doing a "SAML-esq" login will require a change to how id_tokens are processed
+    # change this to a dictionary, where the key is the domain name
+    public_key = None
+
+    # This is only used for social transaction calls
+    headers = {
+        'Authorization': 'SSWS {}'.format(okta['api_token']),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+
+
+    <<setup-flask-login-manager>>
+
+
+    <<fetch-jwt-public-key>>
+
+
+    @app.route("/spa")
+    def spa():
+        return render_template(
+            'spa.html',
+            okta=okta)
+
+
+    @app.route("/secret")
+    @login_required
+    def logged_in():
+        opts = {'user': current_user}
+        return render_template(
+            'secret.html',
+            opts=opts,
+            okta=okta)
+
+
+    <<parse-jwt>>
+
+
+    @app.route("/login", methods=['POST'])
+    def login_via_jwt():
+        token = request.form['id_token']
+        decoded = parse_jwt(token)
+        user_id = decoded['sub']
+        user = UserSession(user_id)
+        login_user(user)
+        return(str(decoded))
+
+
+    @app.route("/logout")
+    def logout():
+        logout_user()
+        return redirect(url_for('main_page', _external=True, _scheme='https'))
+
+
+    # FIXME: Use decoded['sub'] to fetch the user profile from Okta,
+    # returning that in the result
+    @app.route("/users/me")
+    def users_me():
+        authorization = request.headers.get('Authorization')
+        token = authorization.replace('Bearer ', '')
+        decoded = parse_jwt(token)
+        rv = {'user_id': decoded['sub']}
+        return flask.jsonify(**rv)
+
+
+    @app.route("/")
+    def main_page():
+        if len(required.keys()) > 0:
+            return render_template(
+                'error.html',
+                required=required,
+                okta=okta)
+
+        target_origin = url_for('main_page', _external=True, _scheme='https')
+        return render_template(
+            'main_page.html',
+            target_origin=target_origin,
+            okta=okta)
+
+
+    if __name__ == "__main__":
+        try:
+            public_key = fetch_jwt_public_key(okta['base_url'])
+        except:
+            pass
+
+        # Bind to PORT if defined, otherwise default to 5000.
+        port = int(os.environ.get('PORT', 5000))
+        if port == 5000:
+            app.debug = True
+        app.run(port=port)
+  #+END_SRC
+*** FIXME The public key above (=public_key=) should be fetched via the issuer
+*** FIXME Change =public_key= to =public_keys= and store using okta org FQDN as the "key"
+
+** requirements.txt
+  #+NAME: requirements.txt
+  #+BEGIN_SRC text :tangle requirements.txt :noweb yes :exports none :padline no
+    Flask>=0.10.1
+    Flask-Login>=0.3.2
+    PyJWT>=1.4.0
+    cryptography
+    gunicorn>=19.3.0
+    mock==1.3.0
+    nose==1.3.7
+    requests==2.8.1
+    responses==0.5.0
+  #+END_SRC
+** base.html
+   TODO:
+   - [ ] Explain okta snip too
+   - [ ] explain versioning
+   - [ ] explain the template tags you can use
+   - [ ] Explain the "content" template tag
+
+   This snippet 
+
+   #+NAME: okta-sign-in-widget-includes
+   #+BEGIN_SRC html
+     <link href="{{okta.base_url}}/js/sdk/okta-sign-in-1.1.0.min.css" type="text/css" rel="stylesheet">
+     <script src="{{okta.base_url}}/js/sdk/okta-sign-in-1.1.0.min.js" type="text/javascript"></script>
+   #+END_SRC
+
+   #+NAME: okta-sign-in-widget-theme
+   #+BEGIN_SRC html
+     <link href="{{okta.base_url}}/js/sdk/okta-theme.css" type="text/css" rel="stylesheet">
+   #+END_SRC
+
+   #+BEGIN_SRC html :tangle templates/base.html :noweb yes :exports none
+     <!DOCTYPE html>
+     <html lang="en">
+       <head>
+         <meta charset="utf-8">
+         <meta http-equiv="X-UA-Compatible" content="IE=edge">
+         <meta name="viewport" content="width=device-width, initial-scale=1">
+         <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+         <title>Okta Authentication Example</title>
+
+         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+         
+         <!-- Bootstrap core CSS -->
+         <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet" integrity="sha256-MfvZlkHCEqatNoGiOXveE8FIwMzZg4W85qfrfIFBfYc= sha512-dTfge/zgoMYpP7QbHy4gWMEGsbsdZeCXz7irItjcC3sPUFtf0kuFbDz/ixG7ArTxmDjLXDmezHubeNikyKGVyQ==" crossorigin="anonymous">
+
+         <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+         <!--[if lt IE 9]>
+           <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+           <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+           <![endif]-->
+         <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha256-k2/8zcNbxVIh5mnQ52A0r3a6jAgMGxFJFE2707UxGCk= sha512-ZV9KawG2Legkwp3nAlxLIVFudTauWuBpC10uEafMHYL0Sarrz5A7G79kXh5+5+woxQ5HM559XX2UZjMJ36Wplg==" crossorigin="anonymous">
+         <<okta-sign-in-widget-includes>>
+         <link rel="stylesheet" href="https://lipis.github.io/bootstrap-social/bootstrap-social.css">
+         <<okta-sign-in-widget-theme>>
+         <!-- 60px to make the container go all the way to the bottom of the topbar -->
+         <style>
+           body { padding-top: 80px; }
+           #okta-sign-in { margin-top: 0px; }
+         </style>
+       </head>
+       <body id="main">
+         <nav class="navbar navbar-inverse navbar-fixed-top">
+           <div class="container">
+             <div class="navbar-header">
+               <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                 <span class="sr-only">Toggle navigation</span>
+                 <span class="icon-bar"></span>
+                 <span class="icon-bar"></span>
+                 <span class="icon-bar"></span>
+               </button>
+               <a class="navbar-brand" href="#">Okta Authentication Example</a>
+             </div>
+             <div id="navbar" class="collapse navbar-collapse">
+               <ul class="nav navbar-nav">
+                 {% if 'user' in opts and opts['user'].is_authenticated() %}
+                 <li><a href="/logout">Log out</a></li>
+                 {% endif %}
+               </ul>
+             </div><!--/.nav-collapse -->
+           </div>
+         </nav>
+         <div class="container">
+           {% block body %}
+           {% endblock %}
+         </div><!-- /.container -->
+         {% block javascript %}
+         {% endblock %}
+         <!-- Placed at the end of the document so the pages load faster -->
+         <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js" integrity="sha256-Sk3nkD6mLTMOF0EOpNtsIry+s1CsaqQC1rVLTAy+0yc= sha512-K1qjQ+NcF2TYO/eI3M6v8EiNYZfA95pQumfvcVrTHtwQVDG+aHRqLi/ETn2uB+1JqwYqVG3LIvdm9lj6imS/pQ==" crossorigin="anonymous"></script>
+       </body>
+     </html>
+
+   #+END_SRC
+** spa.html
+    #+NAME: spa.html
+    #+BEGIN_SRC html :tangle templates/spa.html :noweb yes :exports none
+      {% extends "base.html" %}
+      {% block body %}
+            <div class="row">
+              <div class="col-md-6" id="content-left">
+                <div id="logged-out-message">
+                  <p>
+                    This is a demonstration of how to use Okta to handle authentication for a "single page application".
+                  </p>
+                  <!-- Source: http://openclipart.org/detail/34273/tango-system-lock-screen-by-warszawianka -->
+                  <img src="/static/locked-screen.png" alt="Locked computer screen"/>
+               </div>
+               <div id="logged-in-message" style="display: none;">
+                 <h1>You are logged in!</h1>
+                  <img src="/static/top-secret.png" alt="TOP SECRET" />
+               </div>
+              </div>
+              <div class="col-md-6" id="content-right">
+                <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
+                <div id="logged-in-user-id" style="display: none;">
+                 <p>Logged in as User ID: <span id="okta-user-id"></span></p>
+               </div>
+              </div>
+            </div>
+      {% endblock %}
+      {% block javascript %}
+          <script src="/static/single-page.js">
+          </script>
+          <script type="text/javascript">
+            <<setup-okta-sign-in>>
+
+            <<single-page-okta-config>>
+          </script>
+      {% endblock %}
+    #+END_SRC
+
+** main_page.html
+    #+BEGIN_SRC html :tangle templates/main_page.html :noweb yes :exports none
+      {% extends "base.html" %}
+      {% block body %}
+            <div class="row">
+              <div class="col-md-6">
+                <p>
+                This is a demonstration of how to use Okta to handle authentication for a server side application.
+                </p>
+                <!-- Source: http://openclipart.org/detail/34273/tango-system-lock-screen-by-warszawianka -->
+                <img src="/static/locked-screen.png" alt="Locked computer screen"/>
+              </div>
+              <div class="col-md-6">
+                <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
+              </div>
+            </div>
+      {% endblock %}
+      {% block javascript %}
+            <script>
+              <<setup-okta-sign-in>>
+              var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
+
+              oktaSignIn.renderEl(
+                { el: '#okta-sign-in-widget' },
+               function (res) {
+                  console.log(res);
+                  if (res.status === 'SUCCESS') {
+                    $.post("/login", {"id_token": res.idToken}, function(data) {
+                      window.location.href="/secret";
+                    });
+                  }
+                },
+               function (err) { console.log('Unexpected error authenticating user: %o', err); }
+              );
+            </script>
+      {% endblock %}      
+    #+END_SRC
+** secret.html
+    #+BEGIN_SRC html :tangle templates/secret.html :noweb yes :exports none
+      {% extends "base.html" %}
+      {% block body %}
+          <div class="container">
+            <h1>You are logged in!</h1>
+            <div class="row">
+              <div class="col-md-6">
+                <!-- Source: http://openclipart.org/detail/176289/top-secret-by-joshbressers-176289 -->
+                <img src="/static/top-secret.png" alt="TOP SECRET" />
+              </div>
+              <div class="col-md-6">
+                <p>Logged in as User ID: {{ opts.user.user_id }}</p>
+              </div>
+            </div>
+          </div>
+      {% endblock %}
+    #+END_SRC
+* Testing							   :noexport:
+  #+BEGIN_EXAMPLE
+    $ nosetests tests/
+  #+END_EXAMPLE
+* Learn more
+
+  Want to learn more about Open ID Connect and OAuth?
+
+  Here is what we suggest that you read to learn more:
+  - Aaron Parecki's "[[https://aaronparecki.com/articles/2012/07/29/1/oauth2-simplified][OAuth 2 Simplified]]" post.
+
+    Start here if you don't know anything about OAuth 2.
+  - Karl McGuinness' "[[http://developer.okta.com/blog/2015/12/07/oauth/][Demystifying OAuth]]" video and slides.
+    
+    This is a great high level guide that covers the basics of OAuth.
+  - [[http://openid.net/specs/openid-connect-implicit-1_0.html][OpenID Connect Implicit Client Implementer's Guide]]
+
+    An official guide for implementing the "implicit" flow. Language
+    agnostic and very useful for learning the details on how things work.
