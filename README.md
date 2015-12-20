@@ -247,15 +247,15 @@ that Okta uses the OAuth Client ID as the audience in the
             audience=okta['client_id'])
         return rv
 
-Where does the `public_key` come from? It is fetched from the Okta
-"JSON Web Key" endpoint.
+Where does the `public_key` come from? It is fetched from the
+[Okta JSON Web Key endpoint](https://example.okta.com/oauth2/v1/keys).
 
 The code below demonstrations how to fetch a public key to validate
-a JWT from Okta, using the endpoint URL defined as part of the JWK
+a JWT from Okta, using the endpoint URI defined as part of the JWK
 standard.
 
-**Note:** This code pulls from the URL directly. It should really be
-discovering that URL from the `.well-known/openid-configuration` URL endpoint that is
+**Note:** This code pulls from the URI directly. It should really be
+discovering that URI from the `.well-known/openid-configuration` URL endpoint that is
 used for discovery.
 
     def fetch_jwt_public_key(base_url=None):
