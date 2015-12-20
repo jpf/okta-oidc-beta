@@ -431,6 +431,12 @@
 
     #+END_SRC
 
+    This is the contents of a completed =renderOktaWidget()= function:
+    #+BEGIN_SRC javascript :noweb yes
+      <<single-page-app-render-sign-in>>
+    #+END_SRC
+
+
 *** =renderLogin()=
 
     Below is an overview of what the =renderLogin()= function
@@ -476,6 +482,12 @@
       $('#okta-user-id').empty().append(user_id);
       $('#logged-in-user-id').show();
     #+END_SRC
+
+    This is the contents of a completed =renderLogin()= function:
+    #+BEGIN_SRC javascript :noweb yes
+      <<single-page-app-render-login>>
+    #+END_SRC
+
 
 *** =renderLogout()=
 
