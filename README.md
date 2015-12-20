@@ -228,11 +228,11 @@ familiar with SAML, this is the same use case as "SP initiated
 SAML".
 
 Validating a JWT is easy. Here is how to do it in Python using the
-`pyjwt` Python library.
+[pyjwt](https://github.com/jpadilla/pyjwt#pyjwt) Python library.
 
 (See [JWT.io](http://jwt.io/#libraries-io) for a list of JWT libraries in your favorite language.)
 
-The `pyjwt` library handles a lot of ancillary JWT validation by
+The [pyjwt](https://github.com/jpadilla/pyjwt#pyjwt) library handles a lot of ancillary JWT validation by
 default. In particular, it validates the `audience` attribute,
 which means that it will return an error unless the value
 `audience` attribute matches what we pass into this method. Note
@@ -255,7 +255,7 @@ a JWT from Okta, using the endpoint URL defined as part of the JWK
 standard.
 
 **Note:** This code pulls from the URL directly. It should really be
-discovering that URL from the `.well-known` URL endpoint that is
+discovering that URL from the `.well-known/openid-configuration` URL endpoint that is
 used for discovery.
 
     def fetch_jwt_public_key(base_url=None):
