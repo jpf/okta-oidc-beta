@@ -199,14 +199,12 @@
   #+NAME: setup-okta-sign-in
   #+BEGIN_SRC javascript
     function setupOktaSignIn(baseUrl, clientId) {
-        var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
         return new OktaSignIn({
             baseUrl: baseUrl,
             clientId: clientId,
-            redirectUri: redirectUri,
-            authScheme: 'OAUTH2',
             authParams: {
                 responseType: 'id_token',
+                responseMode: 'okta_post_message',
                 scope: ['openid']
             }
         });
@@ -410,7 +408,7 @@
                   dataType: 'json',
                   url: "/users/me",
                   beforeSend: function(xhr) {
-                      xhr.setRequestHeader("Authorization", "Bearer " + res.idToken);
+                      xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
                   },
                   success: function(data){
                       renderLogin(data.user_id);
@@ -567,6 +565,7 @@
         return UserSession(user_id)
   #+END_SRC
 
+  FIXME: the /login route will ONLY work with the login widget
   #+NAME: flask-app
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
@@ -858,7 +857,7 @@
                function (res) {
                   console.log(res);
                   if (res.status === 'SUCCESS') {
-                    $.post("/login", {"id_token": res.idToken}, function(data) {
+                    $.post("/login", {"id_token": res.id_token}, function(data) {
                       window.location.href="/secret";
                     });
                   }
@@ -906,6 +905,13 @@
   #+BEGIN_EXAMPLE
     $ nosetests tests/
   #+END_EXAMPLE
+* To do								   :noexport:
+** TODO Implement SAML ACS-like route to handle =id_token= and 302
+** TODO Add documentation on support for "IDP initiated" flows
+   ... where the user redirect flow starts at Okta
+** TODO Add support for =/sessions/me= to the SPA example
+** TODO Add support for widgetless login 
+   This would use the =/authn= endpoint, then redirect
 * Learn more
 
   Want to learn more about Open ID Connect and OAuth?

@@ -193,14 +193,12 @@ Sign-In Widget. Here is how to configure the Okta Sign-In Widget
 to give you an `id_token`:
 
     function setupOktaSignIn(baseUrl, clientId) {
-        var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
         return new OktaSignIn({
             baseUrl: baseUrl,
             clientId: clientId,
-            redirectUri: redirectUri,
-            authScheme: 'OAUTH2',
             authParams: {
                 responseType: 'id_token',
+                responseMode: 'okta_post_message',
                 scope: ['openid']
             }
         });
@@ -362,7 +360,7 @@ the user's Okta id as a parameter.
                 dataType: 'json',
                 url: "/users/me",
                 beforeSend: function(xhr) {
-                    xhr.setRequestHeader("Authorization", "Bearer " + res.idToken);
+                    xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
                 },
                 success: function(data){
                     renderLogin(data.user_id);
@@ -392,7 +390,7 @@ This is the contents of a completed `renderOktaWidget()` function:
                         dataType: 'json',
                         url: "/users/me",
                         beforeSend: function(xhr) {
-                            xhr.setRequestHeader("Authorization", "Bearer " + res.idToken);
+                            xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
                         },
                         success: function(data){
                             renderLogin(data.user_id);
