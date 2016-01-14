@@ -273,7 +273,7 @@ This use case demonstrates how to have a Single Page application
 authenticate users via OpenID Connect.
 
 The code in this example is contained in two static files:
-`tempaltes/spa.html` for the HTML and `static/single-page.js` for
+`templates/spa.html` for the HTML and `static/single-page.js` for
 the application JavaScript.
 
 The JavaScript used to demonstrate this use case is covered below:
