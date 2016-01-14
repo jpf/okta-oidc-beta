@@ -28,14 +28,12 @@
     </script>
     <script type="text/javascript">
       function setupOktaSignIn(baseUrl, clientId) {
-          var redirectUri = baseUrl + '/oauth2/v1/widget/callback?targetOrigin=' + window.location.href;
           return new OktaSignIn({
               baseUrl: baseUrl,
               clientId: clientId,
-              redirectUri: redirectUri,
-              authScheme: 'OAUTH2',
               authParams: {
                   responseType: 'id_token',
+                  responseMode: 'okta_post_message',
                   scope: ['openid']
               }
           });

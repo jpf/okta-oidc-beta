@@ -10,7 +10,7 @@ function renderOktaWidget() {
                     dataType: 'json',
                     url: "/users/me",
                     beforeSend: function(xhr) {
-                        xhr.setRequestHeader("Authorization", "Bearer " + res.idToken);
+                        xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
                     },
                     success: function(data){
                         renderLogin(data.user_id);
