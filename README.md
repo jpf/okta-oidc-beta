@@ -409,40 +409,6 @@ Below is an overview of what the `renderLogin()` function
 does:
 
     function renderLogin(user_id) {
-        <<display-log-out-message>>
-        <<display-logged-in-message>>
-        <<display-user-id>>
-    }
-
-Here is what each of the sections above do:
-
-First, in the `<<display-log-out-message>>` section, we add a "Log out" item
-to the navbar, then register a `click` event for when the user
-clicks on "Log out":
-
-    $('#navbar > ul').empty().append('<li><a id="logout" href="/logout">Log out</a></li>');
-    $('#logout').click(function(event) {
-        event.preventDefault();
-        renderLogout();
-    });
-
-Secondly, in the `<<display-logged-in-message>>` section, we hide the
-"logged out" message and display the "logged in" message:
-
-    $('#logged-out-message').hide();
-    $('#logged-in-message').show();
-
-Lastly, in the `<<display-user-id>>` section, we hide the Okta Sign-In
-Widget append the user's Okta ID into page, then show the part of
-the page with the user's Okta ID:
-
-    $('#okta-sign-in-widget').hide();
-    $('#okta-user-id').empty().append(user_id);
-    $('#logged-in-user-id').show();
-
-This is the contents of a completed `renderLogin()` function:
-
-    function renderLogin(user_id) {
         $('#navbar > ul').empty().append('<li><a id="logout" href="/logout">Log out</a></li>');
         $('#logout').click(function(event) {
             event.preventDefault();
@@ -455,6 +421,39 @@ This is the contents of a completed `renderLogin()` function:
         $('#okta-user-id').empty().append(user_id);
         $('#logged-in-user-id').show();
     }
+
+Here is what each of the sections above do:
+
+First, we add a "Log out" item
+to the navbar, then register a `click()` event for when the user
+clicks on "Log out":
+
+    $('#navbar > ul').empty().append('<li><a id="logout" href="/logout">Log out</a></li>');
+    $('#logout').click(function(event) {
+        event.preventDefault();
+        renderLogout();
+    });
+
+Next, we hide the "logged out" message and display the "logged in" message:
+
+    $('#logged-out-message').hide();
+    $('#logged-in-message').show();
+
+Lastly, in the `<<display-user-id>>` section, we hide the Okta Sign-In
+Widget append the user's Okta ID into page, then show the part of
+the page with the user's Okta ID:
+
+    $('#okta-sign-in-widget').hide();
+    $('#okta-user-id').empty().append(user_id);
+    $('#logged-in-user-id').show();
+
+**Note:** The `#okta-sign-in-widget` element can only be
+instantiated once per page, so for a Single Page Application, it
+is critical that you hide the element instead of removing it.
+
+Convert your code to show and hide the `#okta-sign-in-widget`
+element if your browser's JavaScript console shows an error that says:
+"Backbone.history has already been started" 
 
 ### `renderLogout()`
 

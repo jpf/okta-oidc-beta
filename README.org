@@ -440,7 +440,7 @@
     Below is an overview of what the =renderLogin()= function
     does:
     #+NAME: single-page-app-render-login
-    #+BEGIN_SRC javascript 
+    #+BEGIN_SRC javascript :noweb yes
       function renderLogin(user_id) {
           <<display-log-out-message>>
           <<display-logged-in-message>>
@@ -450,8 +450,8 @@
 
     Here is what each of the sections above do:
 
-    First, in the =<<display-log-out-message>>= section, we add a "Log out" item
-    to the navbar, then register a =click= event for when the user
+    First, we add a "Log out" item
+    to the navbar, then register a =click()= event for when the user
     clicks on "Log out":
     #+NAME: display-log-out-message
     #+BEGIN_SRC javascript
@@ -462,8 +462,7 @@
       });
     #+END_SRC
 
-    Secondly, in the =<<display-logged-in-message>>= section, we hide the
-    "logged out" message and display the "logged in" message:
+    Next, we hide the "logged out" message and display the "logged in" message:
     #+NAME: display-logged-in-message
     #+BEGIN_SRC javascript
       $('#logged-out-message').hide();
@@ -474,6 +473,7 @@
     Lastly, in the =<<display-user-id>>= section, we hide the Okta Sign-In
     Widget append the user's Okta ID into page, then show the part of
     the page with the user's Okta ID:
+
     #+NAME: display-user-id
     #+BEGIN_SRC javascript
       $('#okta-sign-in-widget').hide();
@@ -481,11 +481,13 @@
       $('#logged-in-user-id').show();
     #+END_SRC
 
-    This is the contents of a completed =renderLogin()= function:
-    #+BEGIN_SRC javascript :noweb yes
-      <<single-page-app-render-login>>
-    #+END_SRC
+    *Note:* The =#okta-sign-in-widget= element can only be
+    instantiated once per page, so for a Single Page Application, it
+    is critical that you hide the element instead of removing it.
 
+    Convert your code to show and hide the =#okta-sign-in-widget=
+    element if your browser's JavaScript console shows an error that says:
+    "Backbone.history has already been started" 
 
 *** =renderLogout()=
 
