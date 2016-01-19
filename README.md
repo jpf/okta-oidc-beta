@@ -83,6 +83,9 @@ the `/oauth2/` API endpoint:
 
 ## Python
 
+While the code samples in this guide are written in Python, you do
+not need Python to use OpenID Connect with Okta.
+
 To run the code samples in this project you will need a working
 copy of Python 2.7+ and the pip package manager. See this guide on
 "[Properly Installing Python](http://docs.python-guide.org/en/latest/starting/installation/)"  for instructions for setting up
@@ -233,9 +236,7 @@ Validating a JWT is easy. Here is how to do it in Python using the
 The [pyjwt](https://github.com/jpadilla/pyjwt#pyjwt) library handles a lot of ancillary JWT validation by
 default. In particular, it validates the `audience` attribute,
 which means that it will return an error unless the value
-`audience` attribute matches what we pass into this method. Note
-that Okta uses the OAuth Client ID as the audience in the
-`id_token` JWTs that it issues.
+`audience` attribute matches what we pass into this method.
 
     def parse_jwt(token):
         rv = jwt.decode(
@@ -244,6 +245,28 @@ that Okta uses the OAuth Client ID as the audience in the
             algorithms='RS256',
             audience=okta['client_id'])
         return rv
+
+Note that we are setting two specific parameters to `parse_jwt`:
+
+1.  Force the JWT signing algorithm to `RS256`
+    
+    This line forces the JWT signing algorithm to `RS256`:
+    
+        algorithms='RS256',
+    
+    We do this because it is a best practice for handling JWTs and
+    is done to avoid [critical vulnerabilities in JSON Web Token libraries](https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html).
+
+2.  The OAuth Client ID
+    
+    This line sets the audience to the value of the Okta OAuth
+    Client ID:
+    
+        audience=okta['client_id'])
+    
+    Okta uses the OAuth Client ID as the audience in the
+    `id_token` JWTs that it issues. We pass this value to `pyjwt` so
+    that our JWTs are properly validated.
 
 Where does the `public_key` come from? It is fetched from the
 [Okta JSON Web Key endpoint](https://example.okta.com/oauth2/v1/keys).

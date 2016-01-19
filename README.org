@@ -27,6 +27,7 @@
 
   If you have any questions, comments, or suggestions for this
   document please contact Joël Franusic <joel.franusic@okta.com>
+** FIXME: Explain what BETA means				   :noexport:
 * Deploy to Heroku 						   :noexport:
 ** TODO Add a "Deploy to Heroku" button here!
 * Prerequisites
@@ -89,6 +90,9 @@
      }
    #+END_EXAMPLE
 ** Python
+   While the code samples in this guide are written in Python, you do
+   not need Python to use OpenID Connect with Okta.
+
    To run the code samples in this project you will need a working
    copy of Python 2.7+ and the pip package manager. See this guide on
    "[[http://docs.python-guide.org/en/latest/starting/installation/][Properly Installing Python]]"  for instructions for setting up
@@ -260,20 +264,44 @@
    The [[https://github.com/jpadilla/pyjwt#pyjwt][pyjwt]] library handles a lot of ancillary JWT validation by
    default. In particular, it validates the =audience= attribute,
    which means that it will return an error unless the value
-   =audience= attribute matches what we pass into this method. Note
-   that Okta uses the OAuth Client ID as the audience in the
-   =id_token= JWTs that it issues.
+   =audience= attribute matches what we pass into this method.
 
    #+NAME: parse-jwt
-   #+BEGIN_SRC python
+   #+BEGIN_SRC python :noweb yes
      def parse_jwt(token):
          rv = jwt.decode(
              token,
              public_key,
-             algorithms='RS256',
-             audience=okta['client_id'])
+             <<force_rs256>>
+             <<audience_client_id>>
          return rv
    #+END_SRC
+
+   Note that we are setting two specific parameters to =parse_jwt=:
+   1. Force the JWT signing algorithm to =RS256=
+      
+      This line forces the JWT signing algorithm to =RS256=:
+      #+NAME: force_rs256
+      #+BEGIN_SRC python
+        algorithms='RS256',
+      #+END_SRC
+
+      We do this because it is a best practice for handling JWTs and
+      is done to avoid [[https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html][critical vulnerabilities in JSON Web Token libraries]].
+
+   2. The OAuth Client ID
+
+      This line sets the audience to the value of the Okta OAuth
+      Client ID:
+      #+NAME: audience_client_id
+      #+BEGIN_SRC python
+        audience=okta['client_id'])
+      #+END_SRC
+
+      Okta uses the OAuth Client ID as the audience in the
+      =id_token= JWTs that it issues. We pass this value to =pyjwt= so
+      that our JWTs are properly validated.
+   
 
    Where does the =public_key= come from? It is fetched from the
    [[https://example.okta.com/oauth2/v1/keys][Okta JSON Web Key endpoint]].
