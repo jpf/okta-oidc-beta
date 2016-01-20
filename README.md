@@ -238,9 +238,9 @@ default. In particular, it validates the `audience` attribute,
 which means that it will return an error unless the value
 `audience` attribute matches what we pass into this method.
 
-    def parse_jwt(token):
+    def parse_jwt(id_token):
         rv = jwt.decode(
-            token,
+            id_token,
             public_key,
             algorithms='RS256',
             audience=okta['client_id'])

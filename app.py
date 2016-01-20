@@ -122,9 +122,9 @@ def logged_in():
         okta=okta)
 
 
-def parse_jwt(token):
+def parse_jwt(id_token):
     rv = jwt.decode(
-        token,
+        id_token,
         public_key,
         algorithms='RS256',
         audience=okta['client_id'])
@@ -133,8 +133,8 @@ def parse_jwt(token):
 
 @app.route("/login", methods=['POST'])
 def login_via_jwt():
-    token = request.form['id_token']
-    decoded = parse_jwt(token)
+    id_token = request.form['id_token']
+    decoded = parse_jwt(id_token)
     user_id = decoded['sub']
     user = UserSession(user_id)
     login_user(user)
