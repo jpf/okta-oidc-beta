@@ -992,6 +992,12 @@
      limitations under the License.
    #+END_SRC
 ** Procfile
+   This file should use gunicorn, but that was causing unexpected 500
+   errors on Heroku. So I'm using =python app.py= instead.
+   #+BEGIN_EXAMPLE
+     web: gunicorn app:app --log-file=-
+   #+END_EXAMPLE
+
    #+BEGIN_SRC text :tangle Procfile :padline no
      web: python app.py
    #+END_SRC
