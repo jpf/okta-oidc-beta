@@ -15,7 +15,13 @@ Specifically demonstrated are the following two use-cases:
 If you have any questions, comments, or suggestions for this
 document please contact Joël Franusic <joel.franusic@okta.com>
 
-# Prerequisites
+# How to run this demo
+
+This repository comes with code that you can run yourself to see how
+OIDC works. You can run this code locally on your machine, or you
+can deploy the code to Heroku.
+
+## Prerequisites
 
 All examples in this guide assume that you have an Okta org, API
 token, and Okta OAuth Client ID. 
@@ -25,17 +31,18 @@ the [pip](https://en.wikipedia.org/wiki/Pip_%28package_manager%29) package manag
 
 Here is how to get those things if you do not have them already:
 
-## Okta org
+### Okta org
 
 If you do not have an Okta org, you can [sign up for a free Developer
 Edition Okta org](https://www.okta.com/developer/signup/).
 
-## Okta API token
+### Okta API token
 
 If you do not have an API token, follow our guide for
 [getting a token](http://developer.okta.com/docs/api/getting_started/getting_a_token.html).
 
-## Okta OAuth Client ID
+### Okta OAuth Client ID
+
 
 At the moment, the only way to register an OAuth client with Okta
 is via Okta's `/oauth2/` API endpoint.
@@ -45,8 +52,18 @@ Postman Collection for Okta's [Client Registration API endpoint](https://beta.ge
 
 Use the "Create OAuth Client" template in Postman, replacing data in the
 sections as appropriate for your situation. The most important
-value to change in the example JSON payload is the value for the
+value to change in the example JSON payload is the array value for the
 `redirect_uris` key. 
+
+It is important that the `redirect_uris` array contains the URL
+for the site that will be making requests against Okta. If you're
+using the instructions below, this URL will look like
+"`https://abc123de4.ngrok.io`" or
+"`https://example.herokuapp.com`".
+
+Don't worry if you don't yet know the URL that you'll be using
+here, you can always update the value of `redirect_uris` using an
+HTTP PUT.
 
 It isn't required, but we suggest that
 you also change the values for the `client_name`, `client_uri`, `logo_uri`, and `jwks_uri` keys.
@@ -81,7 +98,7 @@ the `/oauth2/` API endpoint:
         "jwks_uri": "https://static.example.com/certs/public.jwks"
     }
 
-## Python
+### Python
 
 While the code samples in this guide are written in Python, you do
 not need Python to use OpenID Connect with Okta.
@@ -91,24 +108,24 @@ copy of Python 2.7+ and the pip package manager. See this guide on
 "[Properly Installing Python](http://docs.python-guide.org/en/latest/starting/installation/)"  for instructions for setting up
 Python on your system.
 
-# Setup
+## Setup
 
 Once you have all the prerequisites, the next step will be do get
 this example code running. You can either run this code from your
 local machine, or by running the code from Heroku.
 
-# Make a local copy of this repository
+## Make a local copy of this repository
 
 Before you can make use of the code in this guide, you will need a
 local copy of the code to work from. You can either download a copy
 of this repository using the "Download ZIP" button or using the `git
-  clone` command.
+   clone` command.
 
 Using `git clone` is the suggested method for making a local copy of
 this repository, because getting updates to this repository will be
 as easy as running `git pull origin master`.
 
-# Running on your local machine
+## Running on your local machine
 
 With a local copy of this repository on your machine, the next step
 will be to set up the project.
@@ -136,7 +153,30 @@ Use this command to run the application locally on your system:
 
     $ python app.py
 
-# Running on Heroku
+### Make the example available via HTTPS using ngrok
+
+As a last step, you will need to make your local copy of the
+example code available via HTTPS. You need to do this because the
+[OpenID Connect specification requires that you do so](http://openid.net/specs/openid-connect-core-1_0.html#ImplicitAuthRequest). 
+
+The easiest way to do this is using the excellent tool "[ngrok](https://ngrok.com/)".
+
+To get started with ngrok, visit the
+["Download" page for ngrok](https://ngrok.com/download), download ngrok, then start it on your
+system.
+
+Assuming that your example code is listening on
+`http://localhost:5000`, start ngrok with the following command:
+
+    $ ngrok http 5000
+
+When ngrok starts, you will see a page that give you information
+on the ngrok. Look for the line that starts with **Forwarding** and
+then copy the URL that starts with "https", it will look something
+like this: `https://ab123cd4.ngrok.io` - this is the URL that you
+will use in the following steps.
+
+## Running on Heroku
 
 Assuming that you've already installed the
 [Heroku Toolbelt](https://toolbelt.heroku.com/), here are the commands you'd use to deploy this
@@ -155,6 +195,30 @@ Then, configure the application using these commands below.
 Finally:
 
     $ heroku open
+
+## Whitelist URL in Okta
+
+The last thing that you will need to do is add the URL for your
+example application to the appropriate Okta whitelists. This is
+done in two places: 
+
+1.  The OAuth client configuration in your Okta org
+2.  The CORS settings in your Okta org
+
+If you're using ngrok or Heroku to host your example application,
+then your URL will look like this "`https://abc123de4.ngrok.io`" or
+ "`https://example.herokuapp.com`".
+
+### Update the OAuth Client `redirect_uris` array
+
+If you didn't do it when you created your OAuth Client ID (See section 2.1.3), you
+will need to go back to that section and follow the instructions
+to add your URL to the `redirect_uris` whitelist.
+
+### Update CORS configuration on the Okta web page
+
+You will also need to enable the URL for CORS. See 
+[Okta's guide to Enabling CORS](http://developer.okta.com/docs/api/getting_started/enabling_cors.html) for details on how to do this.
 
 # How it works
 
