@@ -781,7 +781,7 @@
         port = int(os.environ.get('PORT', 5000))
         if port == 5000:
             app.debug = True
-        app.run(port=port)
+        app.run("0.0.0.0", port=port)
   #+END_SRC
 *** FIXME The public key above (=public_key=) should be fetched via the issuer
 *** FIXME Change =public_key= to =public_keys= and store using okta org FQDN as the "key"
@@ -990,6 +990,10 @@
      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
      See the License for the specific language governing permissions and
      limitations under the License.
+   #+END_SRC
+** Procfile
+   #+BEGIN_SRC text :tangle Procfile :padline no
+     web: python app.py
    #+END_SRC
 * Testing 							   :noexport:
   #+BEGIN_EXAMPLE
