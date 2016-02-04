@@ -16,7 +16,8 @@ from flask.ext.login import logout_user
 import flask
 import jwt
 import requests
-
+import urllib
+import json
 
 app = Flask(__name__)
 
@@ -49,11 +50,11 @@ for key in required.keys():
 
 # Note: This will only work for one org
 # doing a "SAML-esq" login will require a change to how id_tokens are processed
-# change this to a dictionary, where the key is the domain name
+# change this to a Python Dictionary, where the key is the domain name
 public_key = None
 
-# This is only used for social transaction calls
 headers = {
+    # This is only used for social transaction calls
     'Authorization': 'SSWS {}'.format(okta['api_token']),
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -131,14 +132,51 @@ def parse_jwt(id_token):
     return rv
 
 
+def create_authorize_url(**kwargs):
+    base_url = kwargs['base_url']
+    del(kwargs['base_url'])
+    redirect_url = "{}/oauth2/v1/authorize?{}".format(
+        base_url,
+        urllib.urlencode(kwargs),
+    )
+    return redirect_url
+
+
 @app.route("/login", methods=['POST'])
-def login_via_jwt():
+def login_with_password():
+    payload = {
+        'username': request.form['inputUsername'],
+        'password': request.form['inputPassword'],
+        }
+
+    authn_url = "{}/api/v1/authn".format(okta['base_url'])
+    r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
+    result = r.json()
+
+    redirect_uri = url_for(
+        'sso_oidc',
+        _external=True,
+        _scheme='https')
+    redirect_url = create_authorize_url(
+        base_url=okta['base_url'],
+        sessionToken=result['sessionToken'],
+        client_id=okta['client_id'],
+        scope='openid',
+        response_type='id_token',
+        response_mode='form_post',
+        redirect_uri=redirect_uri,
+        )
+    return redirect(redirect_url)
+
+
+@app.route("/sso/oidc", methods=['GET', 'POST'])
+def sso_oidc():
     id_token = request.form['id_token']
     decoded = parse_jwt(id_token)
     user_id = decoded['sub']
     user = UserSession(user_id)
     login_user(user)
-    return(str(decoded))
+    return redirect(url_for('logged_in', _external=True, _scheme='https'))
 
 
 @app.route("/logout")
@@ -165,11 +203,22 @@ def main_page():
             'error.html',
             required=required,
             okta=okta)
-
+    redirect_uri = url_for(
+        'sso_oidc',
+        _external=True,
+        _scheme='https')
+    login_with_okta_branding = create_authorize_url(
+        base_url=okta['base_url'],
+        client_id=okta['client_id'],
+        scope='openid',
+        response_type='id_token',
+        response_mode='form_post',
+        redirect_uri=redirect_uri)
     target_origin = url_for('main_page', _external=True, _scheme='https')
     return render_template(
         'main_page.html',
         target_origin=target_origin,
+        login_with_okta_branding=login_with_okta_branding,
         okta=okta)
 
 
@@ -183,4 +232,4 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     if port == 5000:
         app.debug = True
-    app.run("0.0.0.0", port=port)
+    app.run(port=port)
