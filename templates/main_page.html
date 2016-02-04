@@ -10,12 +10,46 @@
           <img src="/static/locked-screen.png" alt="Locked computer screen"/>
         </div>
         <div class="col-md-6">
-          <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
+	  <p class="text-center">
+	    Log in <button type="button" id="login-toggle" class="btn btn-default btn-sm">with</button> the Okta Sign In Widget
+	  </p>
+	  <br/>
+          <div id="okta-sign-in-widget"></div>
+	  <div id="okta-login">
+	    <a class="btn btn-primary btn-block" href="{{login_with_okta_branding}}">Login using Okta branded page</a>
+	    
+	    <!-- https://getbootstrap.com/examples/signin/ -->
+	    <div style="width: 300px">
+	    <form class="form-signin" action="/login" method="POST">
+              <h2 class="form-signin-heading">Please sign in</h2>
+              <label for="inputEmail" class="sr-only">Username</label>
+              <input type="email" name="inputUsername" class="form-control" placeholder="Username" required autofocus>
+              <label for="inputPassword" class="sr-only">Password</label>
+              <input type="password" name="inputPassword" class="form-control" placeholder="Password" required>
+	      <br>
+              <button class="btn btn-lg btn-primary btn-block" type="submit">Sign in</button>
+	    </form>
+	    </div>
+	  </div>
         </div>
       </div>
 {% endblock %}
 {% block javascript %}
       <script>
+	$("#okta-sign-in-widget").hide();
+	
+	$("#login-toggle").click(
+	function () {
+
+	$("#okta-sign-in-widget").toggle();
+	$("#okta-login").toggle();
+	
+	var text = $("#login-toggle").text();
+	$("#login-toggle").html(
+	text == "without" ? "with" : "without"
+	);
+	}); // click
+	
         function setupOktaSignIn(baseUrl, clientId) {
             return new OktaSignIn({
                 baseUrl: baseUrl,
@@ -34,7 +68,7 @@
          function (res) {
             console.log(res);
             if (res.status === 'SUCCESS') {
-              $.post("/login", {"id_token": res.id_token}, function(data) {
+              $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
                 window.location.href="/secret";
               });
             }
