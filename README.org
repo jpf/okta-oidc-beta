@@ -224,6 +224,11 @@
 *** Update CORS configuration on the Okta web page
     You will also need to enable the URL for CORS. See 
     [[http://developer.okta.com/docs/api/getting_started/enabling_cors.html][Okta's guide to Enabling CORS]] for details on how to do this.
+** Open the URL for the example application in your browser
+   
+   If you're using ngrok or Heroku to host your example application,
+   then your URL will look like this "=https://abc123de4.ngrok.io=" or
+    "=https://example.herokuapp.com=".
 * How it works
   The core of using Open ID Connect with your application is the
   =id_token=, which is a JSON Web Token (JWT).
@@ -410,6 +415,7 @@
       var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
   
       $(document).ready(function () {
+          // defined in 'single-page.js'
           renderOktaWidget();
       });
     #+END_SRC
@@ -491,12 +497,13 @@
       function (res) {
           if (res.status === 'SUCCESS') {
               console.log(res);
+              var id_token = res.id_token || res.idToken;
               $.ajax({
                   type: "GET",
                   dataType: 'json',
                   url: "/users/me",
                   beforeSend: function(xhr) {
-                      xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                      xhr.setRequestHeader("Authorization", "Bearer " + id_token);
                   },
                   success: function(data){
                       renderLogin(data.user_id);
@@ -665,6 +672,7 @@
 
     # NOTE: Change this to something else!
     # FIXME: Change this to use os.environ.get
+    # This is used by flask-login to hash the cookies that it gives to logged in users
     app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
 
     required = {
@@ -946,8 +954,9 @@
                 { el: '#okta-sign-in-widget' },
                function (res) {
                   console.log(res);
+                  var id_token = res.id_token || res.idToken;
                   if (res.status === 'SUCCESS') {
-                    $.post("/login", {"id_token": res.id_token}, function(data) {
+                    $.post("/login", {"id_token": id_token}, function(data) {
                       window.location.href="/secret";
                     });
                   }
@@ -1010,8 +1019,6 @@
 ** TODO Add documentation on support for "IDP initiated" flows
    ... where the user redirect flow starts at Okta
 ** TODO Add support for =/sessions/me= to the SPA example
-** TODO Add support for widgetless login 
-   This would use the =/authn= endpoint, then redirect
 * Learn more
 
   Want to learn more about Open ID Connect and OAuth?

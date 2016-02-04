@@ -220,6 +220,12 @@ to add your URL to the `redirect_uris` whitelist.
 You will also need to enable the URL for CORS. See 
 [Okta's guide to Enabling CORS](http://developer.okta.com/docs/api/getting_started/enabling_cors.html) for details on how to do this.
 
+## Open the URL for the example application in your browser
+
+If you're using ngrok or Heroku to host your example application,
+then your URL will look like this "`https://abc123de4.ngrok.io`" or
+ "`https://example.herokuapp.com`".
+
 # How it works
 
 The core of using Open ID Connect with your application is the
@@ -374,6 +380,7 @@ template.
     var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
     
     $(document).ready(function () {
+        // defined in 'single-page.js'
         renderOktaWidget();
     });
 
@@ -442,12 +449,13 @@ the user's Okta id as a parameter.
     function (res) {
         if (res.status === 'SUCCESS') {
             console.log(res);
+            var id_token = res.id_token || res.idToken;
             $.ajax({
                 type: "GET",
                 dataType: 'json',
                 url: "/users/me",
                 beforeSend: function(xhr) {
-                    xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                    xhr.setRequestHeader("Authorization", "Bearer " + id_token);
                 },
                 success: function(data){
                     renderLogin(data.user_id);
@@ -472,12 +480,13 @@ This is the contents of a completed `renderOktaWidget()` function:
             function (res) {
                 if (res.status === 'SUCCESS') {
                     console.log(res);
+                    var id_token = res.id_token || res.idToken;
                     $.ajax({
                         type: "GET",
                         dataType: 'json',
                         url: "/users/me",
                         beforeSend: function(xhr) {
-                            xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                            xhr.setRequestHeader("Authorization", "Bearer " + id_token);
                         },
                         success: function(data){
                             renderLogin(data.user_id);

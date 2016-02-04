@@ -33,8 +33,9 @@
           { el: '#okta-sign-in-widget' },
          function (res) {
             console.log(res);
+            var id_token = res.id_token || res.idToken;
             if (res.status === 'SUCCESS') {
-              $.post("/login", {"id_token": res.id_token}, function(data) {
+              $.post("/login", {"id_token": id_token}, function(data) {
                 window.location.href="/secret";
               });
             }

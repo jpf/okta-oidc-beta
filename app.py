@@ -22,6 +22,7 @@ app = Flask(__name__)
 
 # NOTE: Change this to something else!
 # FIXME: Change this to use os.environ.get
+# This is used by flask-login to hash the cookies that it gives to logged in users
 app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
 
 required = {
