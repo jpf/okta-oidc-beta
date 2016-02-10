@@ -5,12 +5,13 @@ function renderOktaWidget() {
         function (res) {
             if (res.status === 'SUCCESS') {
                 console.log(res);
+                var id_token = res.id_token || res.idToken;
                 $.ajax({
                     type: "GET",
                     dataType: 'json',
                     url: "/users/me",
                     beforeSend: function(xhr) {
-                        xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                        xhr.setRequestHeader("Authorization", "Bearer " + id_token);
                     },
                     success: function(data){
                         renderLogin(data.user_id);

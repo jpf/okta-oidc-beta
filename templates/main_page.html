@@ -90,6 +90,7 @@
           { el: '#okta-sign-in-widget' },
          function (res) {
             console.log(res);
+            var id_token = res.id_token || res.idToken;
             if (res.status === 'SUCCESS') {
               $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
                 window.location.href="/secret";

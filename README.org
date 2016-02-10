@@ -224,6 +224,11 @@
 *** Update CORS configuration on the Okta web page
     You will also need to enable the URL for CORS. See 
     [[http://developer.okta.com/docs/api/getting_started/enabling_cors.html][Okta's guide to Enabling CORS]] for details on how to do this.
+** Open the URL for the example application in your browser
+   
+   If you're using ngrok or Heroku to host your example application,
+   then your URL will look like this "=https://abc123de4.ngrok.io=" or
+    "=https://example.herokuapp.com=".
 * How it works
   The core of using Open ID Connect with your application is the
   =id_token=, which is a JSON Web Token (JWT).
@@ -410,6 +415,7 @@
       var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
   
       $(document).ready(function () {
+          // defined in 'single-page.js'
           renderOktaWidget();
       });
     #+END_SRC
@@ -492,12 +498,13 @@
       function (res) {
           if (res.status === 'SUCCESS') {
               console.log(res);
+              var id_token = res.id_token || res.idToken;
               $.ajax({
                   type: "GET",
                   dataType: 'json',
                   url: "/users/me",
                   beforeSend: function(xhr) {
-                      xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                      xhr.setRequestHeader("Authorization", "Bearer " + id_token);
                   },
                   success: function(data){
                       renderLogin(data.user_id);
@@ -817,6 +824,7 @@
 
     # NOTE: Change this to something else!
     # FIXME: Change this to use os.environ.get
+    # This is used by flask-login to hash the cookies that it gives to logged in users
     app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
 
     required = {
@@ -1048,17 +1056,29 @@
    - [ ] explain the template tags you can use
    - [ ] Explain the "content" template tag
 
-   This snippet 
+
+   The version number for the Okta Sign In Widget is defined below, it
+   is used to select the appropriate files to load for the widget. For
+   example, if the version of the Okta Sign In Widget is "1.1.0", then
+   the filenames used to load the widget will look like this: 
+   - =okta-sign-in-1.1.0.min.css=
+   - =okta-sign-in-1.1.0.min.js=
+   - =okta-theme-1.1.0.css=
+
+   #+NAME: sign-in-widget-version
+   #+BEGIN_SRC text :padline no
+     1.1.0
+   #+END_SRC
 
    #+NAME: okta-sign-in-widget-includes
    #+BEGIN_SRC html
-     <link href="{{okta.base_url}}/js/sdk/okta-sign-in-1.1.0.min.css" type="text/css" rel="stylesheet">
-     <script src="{{okta.base_url}}/js/sdk/okta-sign-in-1.1.0.min.js" type="text/javascript"></script>
+     <link href="{{okta.base_url}}/js/sdk/okta-sign-in-<<sign-in-widget-version>>.min.css" type="text/css" rel="stylesheet">
+     <script src="{{okta.base_url}}/js/sdk/okta-sign-in-<<sign-in-widget-version>>.min.js" type="text/javascript"></script>
    #+END_SRC
 
    #+NAME: okta-sign-in-widget-theme
-   #+BEGIN_SRC html
-     <link href="{{okta.base_url}}/js/sdk/okta-theme.css" type="text/css" rel="stylesheet">
+   #+BEGIN_SRC html :noweb yes
+     <link href="{{okta.base_url}}/js/sdk/okta-theme-<<sign-in-widget-version>>.css" type="text/css" rel="stylesheet">
    #+END_SRC
 
    #+BEGIN_SRC html :tangle templates/base.html :noweb yes :exports none
@@ -1188,6 +1208,7 @@
                 { el: '#okta-sign-in-widget' },
                function (res) {
                   console.log(res);
+                  var id_token = res.id_token || res.idToken;
                   if (res.status === 'SUCCESS') {
                     $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
                       window.location.href="/secret";
