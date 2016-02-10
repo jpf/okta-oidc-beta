@@ -459,7 +459,7 @@
 
     Here is what the =renderEl= function looks like at a high level:
     #+NAME: single-page-app-render-sign-in
-    #+BEGIN_SRC javascript 
+    #+BEGIN_SRC javascript  :noweb yes
       function renderOktaWidget() {
           oktaSignIn.renderEl(
               <<widget-location-object>>,
@@ -471,20 +471,21 @@
 
     Let's cover each of those sections in detail:
 
-    First we define the =<<widget-location-object>>= section. In this section,
-    we pass in an =id= of "=okta-sign-in-widget=", which is the =id= for the =<div>= that we
-    want to contain the Okta Sign-In Widget.
+    Below we pass =renderEl= "=#okta-sign-in-widget=", which is the
+    HTML =id= for the =<div>= tag that we want to contain the Okta
+    Sign-In Widget.
+
     #+NAME: widget-location-object
     #+BEGIN_SRC javascript
       { el: '#okta-sign-in-widget' }
     #+END_SRC
 
-    Next, in the =<<widget-success-function>>= section, we pass in a
-    function that makes an
-    [[https://en.wikipedia.org/wiki/Ajax_(programming)][Ajax]] request to =/users/me= using the =id_token= in the
-    =Authorization= header, to validate the request. If everything
+
+    Next, we pass =renderEl= a function that makes an [[https://en.wikipedia.org/wiki/Ajax_(programming)][Ajax]] request to
+    =/users/me=. This call passes the =id_token= in the
+    =Authorization= header to validate the request. If everything
     works as expected, then we call the =renderLogin()= function with
-    the user's Okta id as a parameter. 
+    the user's Okta ID as a parameter.
     
     #+NAME: widget-success-function
     #+BEGIN_SRC javascript
@@ -506,23 +507,16 @@
       }
     #+END_SRC
 
-    Lastly, we in the =<<widget-failure-function>>= section, which we
-    pass in a very simple error handling function that just calls
-    =console.log()= with the error message. This is only useful while
-    developing your custom logic for the Okta Sign-In Widget and you
-    will want to do something different in a production deployment.
+    Lastly, we pass =renderEl= an error handling function. In this
+    example, we pass in a very simple error handling function that
+    just calls =console.log()= with the error message. This is only
+    useful while developing your custom logic for the Okta Sign-In
+    Widget and you will want to do something different in a production
+    deployment.
     #+NAME: widget-failure-function
     #+BEGIN_SRC javascript
       function (err) { console.log('Unexpected error authenticating user: %o', err); }
-
     #+END_SRC
-
-    This is the contents of a completed =renderOktaWidget()= function:
-    #+BEGIN_SRC javascript :noweb yes
-      <<single-page-app-render-sign-in>>
-    #+END_SRC
-
-
 *** =renderLogin()=
 
     Below is an overview of what the =renderLogin()= function
@@ -597,6 +591,164 @@
       }
     #+END_SRC
 * Source Files 							   :noexport:
+** Routes
+*** /
+    #+NAME: route_main_page
+    #+BEGIN_SRC python
+      @app.route("/")
+      def main_page():
+          if len(required.keys()) > 0:
+              return render_template(
+                  'error.html',
+                  required=required,
+                  okta=okta)
+          redirect_uri = url_for(
+              'sso_oidc',
+              _external=True,
+              _scheme='https')
+          login_with_okta_branding = create_authorize_url(
+              base_url=okta['base_url'],
+              client_id=okta['client_id'],
+              scope='openid',
+              response_type='id_token',
+              response_mode='form_post',
+              redirect_uri=redirect_uri)
+          target_origin = url_for('main_page', _external=True, _scheme='https')
+          return render_template(
+              'main_page.html',
+              target_origin=target_origin,
+              login_with_okta_branding=login_with_okta_branding,
+              okta=okta)
+    #+END_SRC
+
+    #+NAME: test_has_default_route
+    #+BEGIN_SRC python
+      def test_has_default_route(self):
+          path = "/"
+          rv = self.app.get(path)
+          self.assertEquals("200 OK", rv.status)
+          self.assertIn("<html", rv.data)
+    #+END_SRC
+*** /secret
+    #+NAME: route_secret
+    #+BEGIN_SRC python
+      @app.route("/secret")
+      @login_required
+      def logged_in():
+          opts = {'user': current_user}
+          return render_template(
+              'secret.html',
+              opts=opts,
+              okta=okta)
+    #+END_SRC
+*** /spa
+    #+NAME: route_spa
+    #+BEGIN_SRC python
+      @app.route("/spa")
+      def spa():
+          return render_template(
+              'spa.html',
+              okta=okta)
+    #+END_SRC
+*** /login
+    #+NAME: route_login
+    #+BEGIN_SRC python
+      @app.route("/login", methods=['POST'])
+      def login_with_password():
+          payload = {
+              'username': request.form['inputUsername'],
+              'password': request.form['inputPassword'],
+              }
+
+          authn_url = "{}/api/v1/authn".format(okta['base_url'])
+          r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
+          result = r.json()
+
+          redirect_uri = url_for(
+              'sso_oidc',
+              _external=True,
+              _scheme='https')
+          redirect_url = create_authorize_url(
+              base_url=okta['base_url'],
+              sessionToken=result['sessionToken'],
+              client_id=okta['client_id'],
+              scope='openid',
+              response_type='id_token',
+              response_mode='form_post',
+              redirect_uri=redirect_uri,
+              )
+          return redirect(redirect_url)
+    #+END_SRC
+
+    #+NAME: test_login_with_password
+    #+BEGIN_SRC python
+      @responses.activate
+      def test_login_with_password(self):
+          sessionToken = 'FAKE_SESSION_TOKEN'
+          responses.add(
+              responses.POST,
+              'https://example.okta.com/api/v1/authn',
+              json.dumps({'sessionToken': sessionToken}),
+              status=200)
+          data = {
+              'inputUsername': 'username',
+              'inputPassword': 'password',
+              }
+          rv = self.app.post('/login', data=data)
+          self.assertEquals("302 FOUND", rv.status)
+          self.assertIn('LOCATION', rv.headers)
+          self.assertIn(sessionToken, rv.headers['Location'])   #+END_SRC
+    #+END_SRC
+*** /logout
+    #+NAME: route_logout
+    #+BEGIN_SRC python
+      @app.route("/logout")
+      def logout():
+          logout_user()
+          return redirect(url_for('main_page', _external=True, _scheme='https'))
+    #+END_SRC
+*** /sso/oidc
+    #+NAME: route_sso_oidc
+    #+BEGIN_SRC python
+      @app.route("/sso/oidc", methods=['GET', 'POST'])
+      def sso_oidc():
+          id_token = request.form['id_token']
+          decoded = parse_jwt(id_token)
+          user_id = decoded['sub']
+          user = UserSession(user_id)
+          login_user(user)
+          return redirect(url_for('logged_in', _external=True, _scheme='https'))
+    #+END_SRC
+
+    #+NAME: test_sso_via_id_token
+    #+BEGIN_SRC python
+      def test_sso_via_id_token(self):
+          id_token = self.create_jwt()
+          print id_token
+          rv = self.app.post('/sso/oidc', data={'id_token': id_token})
+          self.assertIn("Set-Cookie", rv.headers)
+          self.assertIn("session=", rv.headers['Set-Cookie'])
+          self.assertEquals("302 FOUND", rv.status)
+
+      def test_sso_via_id_token_invalid(self):
+          id_token = self.create_jwt({'aud': 'invalid'})
+          print id_token
+          rv = self.app.post('/sso/oidc', data={'id_token': id_token})
+          self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
+    #+END_SRC
+*** /users/me
+    #+NAME: route_users_me
+    #+BEGIN_SRC python
+      # FIXME: Use decoded['sub'] to fetch the user profile from Okta,
+      # returning that in the result
+      @app.route("/users/me")
+      def users_me():
+          authorization = request.headers.get('Authorization')
+          token = authorization.replace('Bearer ', '')
+          decoded = parse_jwt(token)
+          rv = {'user_id': decoded['sub']}
+          return flask.jsonify(**rv)
+    #+END_SRC
 ** app.py
   #+NAME: imports
   #+BEGIN_SRC python
@@ -618,6 +770,8 @@
     import flask
     import jwt
     import requests
+    import urllib
+    import json
   #+END_SRC
 
   #+NAME: setup-flask-login-manager
@@ -655,11 +809,9 @@
         return UserSession(user_id)
   #+END_SRC
 
-  FIXME: the /login route will ONLY work with the login widget
   #+NAME: flask-app
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
-
 
     app = Flask(__name__)
 
@@ -692,11 +844,11 @@
 
     # Note: This will only work for one org
     # doing a "SAML-esq" login will require a change to how id_tokens are processed
-    # change this to a dictionary, where the key is the domain name
+    # change this to a Python Dictionary, where the key is the domain name
     public_key = None
 
-    # This is only used for social transaction calls
     headers = {
+        # This is only used for social transaction calls
         'Authorization': 'SSWS {}'.format(okta['api_token']),
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -709,66 +861,38 @@
     <<fetch-jwt-public-key>>
 
 
-    @app.route("/spa")
-    def spa():
-        return render_template(
-            'spa.html',
-            okta=okta)
+    <<route_spa>>
 
 
-    @app.route("/secret")
-    @login_required
-    def logged_in():
-        opts = {'user': current_user}
-        return render_template(
-            'secret.html',
-            opts=opts,
-            okta=okta)
+    <<route_secret>>
 
 
     <<parse-jwt>>
 
 
-    @app.route("/login", methods=['POST'])
-    def login_via_jwt():
-        id_token = request.form['id_token']
-        decoded = parse_jwt(id_token)
-        user_id = decoded['sub']
-        user = UserSession(user_id)
-        login_user(user)
-        return(str(decoded))
+    def create_authorize_url(**kwargs):
+        base_url = kwargs['base_url']
+        del(kwargs['base_url'])
+        redirect_url = "{}/oauth2/v1/authorize?{}".format(
+            base_url,
+            urllib.urlencode(kwargs),
+        )
+        return redirect_url
 
 
-    @app.route("/logout")
-    def logout():
-        logout_user()
-        return redirect(url_for('main_page', _external=True, _scheme='https'))
+    <<route_login>>
 
 
-    # FIXME: Use decoded['sub'] to fetch the user profile from Okta,
-    # returning that in the result
-    @app.route("/users/me")
-    def users_me():
-        authorization = request.headers.get('Authorization')
-        token = authorization.replace('Bearer ', '')
-        decoded = parse_jwt(token)
-        rv = {'user_id': decoded['sub']}
-        return flask.jsonify(**rv)
+    <<route_sso_oidc>>
 
 
-    @app.route("/")
-    def main_page():
-        if len(required.keys()) > 0:
-            return render_template(
-                'error.html',
-                required=required,
-                okta=okta)
+    <<route_logout>>
 
-        target_origin = url_for('main_page', _external=True, _scheme='https')
-        return render_template(
-            'main_page.html',
-            target_origin=target_origin,
-            okta=okta)
+
+    <<route_users_me>>
+
+
+    <<route_main_page>>
 
 
     if __name__ == "__main__":
@@ -786,6 +910,124 @@
 *** FIXME The public key above (=public_key=) should be fetched via the issuer
 *** FIXME Change =public_key= to =public_keys= and store using okta org FQDN as the "key"
 
+** tests/test_flask_app.py
+   This is how we generate an =RSA PRIVATE KEY= to sign our JWTs.
+   #+BEGIN_SRC sh :results code
+     openssl genrsa 1024
+   #+END_SRC
+
+   Here is what a private key should look like:
+   #+NAME: private_key
+   #+RESULTS:
+   #+BEGIN_SRC sh
+   -----BEGIN RSA PRIVATE KEY-----
+   MIICXgIBAAKBgQDexKjUIXzFV6Cfgt+eQrulNRJkKG6BjboDslLLilyizPNtVs9B
+   yvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuTzJ+z6xUa6obwU6kXM6QJR+kI
+   GApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMSfTIA4SjQZXPv/VbMqwIDAQAB
+   AoGBAJW/j1oiNLSX5jK0EExbwbYZygYoI7jVI+EOQ5ftp74Mleq/O02X982A16U/
+   5Ppb8KpSCvTMLBOjnsIRuK7HhGmouiIW3H9IwZAFJ7yGSSlQ6js104cnDqMKWiu+
+   eig9rMQPKEStQqxGhWVvcZZmvLdlslVehbsVDBeuskdOIPfBAkEA+T2mqhjqQKTx
+   HY19sJyiz1WIJ4eE5BkpQwPi9mbj74XQABU1AY7ZXbVzvHsAYuEOJVMu7oeoah5p
+   uSwZip7NywJBAOTPOQx5+sownE50ZyMQpA1ym15GRuBY6Meto5/xZ5sSeQKosswv
+   TYSg5Q1Dh7c8OiLTIl/IR6fCI1fUrUl6IKECQQDol078N6oLz6EvagYcleAdynz4
+   HrC2SIDICE16koQt11tHaIMBxDQ3DglGoCa5H7sau+j1MmXJOj6BTpU7Vn1HAkAr
+   JwnTWI374/8WrM1mx5SpFJxIw2hKl3oPbqgVWin4DRvVbIuMBr/P66hHQB0waaNt
+   PfSVq+gXs32G6w1jdi0BAkEA8IUP5Nthi4gEQ6VVvcocxITswPSgIXSrWlzrdpBl
+   zWuB3EAOQrHd+1Ks7R887uNs6Yce96COoADys2mkd2eKMg==
+   -----END RSA PRIVATE KEY-----
+   #+END_SRC
+
+   And this is how we generate an =RSA PUBLIC KEY=, which we use to
+   validate JWTs signed with the private key.
+
+   Essentially, you =cat= or =echo= the private key into
+   =openssl=. However we use the =sed= command below to remove the
+   leading whitespace that =org-babel= adds in front of the private key.
+   #+BEGIN_SRC sh :var private_key=private_key :results code
+     echo "$private_key" | sed -e 's/^[ ]*//' | openssl rsa -pubout
+   #+END_SRC
+
+   Here is what a public key should look like:
+   #+NAME: public_key
+   #+RESULTS:
+   #+BEGIN_SRC sh
+   -----BEGIN PUBLIC KEY-----
+   MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexKjUIXzFV6Cfgt+eQrulNRJk
+   KG6BjboDslLLilyizPNtVs9ByvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuT
+   zJ+z6xUa6obwU6kXM6QJR+kIGApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMS
+   fTIA4SjQZXPv/VbMqwIDAQAB
+   -----END PUBLIC KEY-----
+   #+END_SRC
+
+
+   #+BEGIN_SRC python :tangle templates/test_flask_app.py :noweb yes :exports none :padline no
+     from datetime import datetime
+     import calendar
+     import json
+
+     from cryptography.hazmat.backends import default_backend
+     from cryptography.hazmat.primitives import serialization
+     import jwt
+     import responses
+     import unittest
+
+     import app as flask_app
+
+     private_key = '''
+     <<private_key>>
+     '''
+
+     public_key = '''
+     <<public_key>>
+     '''
+
+
+     class TestFlaskApp(unittest.TestCase):
+
+         def setUp(self):
+             self.app = flask_app.app.test_client()
+             self.okta = {
+                 'base_url': 'https://example.okta.com',
+                 'api_token': '01A2bCd3efGh-ij-4K-Lmn5OPqrSTuvwXYZaBCD6EF',
+                 'client_id': 'a0bcdEfGhIJkLmNOPQr1',
+                 }
+             flask_app.okta = self.okta
+             flask_app.public_key = serialization.load_pem_public_key(
+                 public_key,
+                 backend=default_backend())
+
+         def tearDown(self):
+             pass
+
+         def create_jwt(self, claim={}):
+             # http://stackoverflow.com/a/16755432/3191847
+             d = datetime.utcnow()
+             iat = int(calendar.timegm(d.utctimetuple()))
+             exp = iat + 3600
+             defaults = {
+                 "sub": "00u0abcdefGHIJKLMNOP",
+                 "ver": 1,
+                 "iss": "https://example.okta.com",
+                 "login": "username@example.com",
+                 "aud": self.okta['client_id'],
+                 "iat": iat,
+                 "exp": exp,
+                 "amr": [
+                     "pwd"
+                 ],
+                 "idp": "00o0abcde1FGHIJKLMNO",
+                 "jti": "abcD0eFgHIJKLmnOPQ1r",
+                 "auth_time": iat
+             }
+             for key in claim.keys():
+                 defaults[key] = claim[key]
+             return jwt.encode(defaults, private_key, algorithm='RS256')
+
+         <<test_has_default_route>>
+
+         <<test_sso_via_id_token>>
+
+         <<test_login_with_password>>
 ** requirements.txt
   #+NAME: requirements.txt
   #+BEGIN_SRC text :tangle requirements.txt :noweb yes :exports none :padline no
@@ -947,7 +1189,7 @@
                function (res) {
                   console.log(res);
                   if (res.status === 'SUCCESS') {
-                    $.post("/login", {"id_token": res.id_token}, function(data) {
+                    $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
                       window.location.href="/secret";
                     });
                   }
@@ -977,7 +1219,7 @@
     #+END_SRC
 ** LICENSE.txt
    #+BEGIN_SRC text :tangle LICENSE.txt
-     Copyright © 2015, Okta, Inc.
+     Copyright © 2015-2016, Okta, Inc.
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -1002,16 +1244,18 @@
      web: python app.py
    #+END_SRC
 * Testing 							   :noexport:
-  #+BEGIN_EXAMPLE
-    $ nosetests tests/
-  #+END_EXAMPLE
+  #+BEGIN_SRC sh
+    nosetests tests/
+  #+END_SRC
+
+  #+RESULTS:
 * To do								   :noexport:
-** TODO Implement SAML ACS-like route to handle =id_token= and 302
+** DONE Add support for widgetless login 
+   This would use the =/authn= endpoint, then redirect
+** DONE Implement SAML ACS-like route to handle =id_token= and 302
 ** TODO Add documentation on support for "IDP initiated" flows
    ... where the user redirect flow starts at Okta
 ** TODO Add support for =/sessions/me= to the SPA example
-** TODO Add support for widgetless login 
-   This would use the =/authn= endpoint, then redirect
 * Learn more
 
   Want to learn more about Open ID Connect and OAuth?

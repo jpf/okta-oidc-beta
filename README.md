@@ -418,56 +418,6 @@ Here is what the `renderEl` function looks like at a high level:
 
     function renderOktaWidget() {
         oktaSignIn.renderEl(
-            <<widget-location-object>>,
-            <<widget-success-function>>,
-            <<widget-failure-function>>
-        );
-    }
-
-Let's cover each of those sections in detail:
-
-First we define the `<<widget-location-object>>` section. In this section,
-we pass in an `id` of "`okta-sign-in-widget`", which is the `id` for the `<div>` that we
-want to contain the Okta Sign-In Widget.
-
-    { el: '#okta-sign-in-widget' }
-
-Next, in the `<<widget-success-function>>` section, we pass in a
-function that makes an
-[Ajax](https://en.wikipedia.org/wiki/Ajax_(programming)) request to `/users/me` using the `id_token` in the
-`Authorization` header, to validate the request. If everything
-works as expected, then we call the `renderLogin()` function with
-the user's Okta id as a parameter. 
-
-    function (res) {
-        if (res.status === 'SUCCESS') {
-            console.log(res);
-            $.ajax({
-                type: "GET",
-                dataType: 'json',
-                url: "/users/me",
-                beforeSend: function(xhr) {
-                    xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
-                },
-                success: function(data){
-                    renderLogin(data.user_id);
-                }
-            });
-        }
-    }
-
-Lastly, we in the `<<widget-failure-function>>` section, which we
-pass in a very simple error handling function that just calls
-`console.log()` with the error message. This is only useful while
-developing your custom logic for the Okta Sign-In Widget and you
-will want to do something different in a production deployment.
-
-    function (err) { console.log('Unexpected error authenticating user: %o', err); }
-
-This is the contents of a completed `renderOktaWidget()` function:
-
-    function renderOktaWidget() {
-        oktaSignIn.renderEl(
             { el: '#okta-sign-in-widget' },
             function (res) {
                 if (res.status === 'SUCCESS') {
@@ -486,9 +436,48 @@ This is the contents of a completed `renderOktaWidget()` function:
                 }
             },
             function (err) { console.log('Unexpected error authenticating user: %o', err); }
-    
         );
     }
+
+Let's cover each of those sections in detail:
+
+Below we pass `renderEl` "`#okta-sign-in-widget`", which is the
+HTML `id` for the `<div>` tag that we want to contain the Okta
+Sign-In Widget.
+
+    { el: '#okta-sign-in-widget' }
+
+Next, we pass `renderEl` a function that makes an [Ajax](https://en.wikipedia.org/wiki/Ajax_(programming)) request to
+`/users/me`. This call passes the `id_token` in the
+`Authorization` header to validate the request. If everything
+works as expected, then we call the `renderLogin()` function with
+the user's Okta ID as a parameter.
+
+    function (res) {
+        if (res.status === 'SUCCESS') {
+            console.log(res);
+            $.ajax({
+                type: "GET",
+                dataType: 'json',
+                url: "/users/me",
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader("Authorization", "Bearer " + res.id_token);
+                },
+                success: function(data){
+                    renderLogin(data.user_id);
+                }
+            });
+        }
+    }
+
+Lastly, we pass `renderEl` an error handling function. In this
+example, we pass in a very simple error handling function that
+just calls `console.log()` with the error message. This is only
+useful while developing your custom logic for the Okta Sign-In
+Widget and you will want to do something different in a production
+deployment.
+
+    function (err) { console.log('Unexpected error authenticating user: %o', err); }
 
 ### `renderLogin()`
 
