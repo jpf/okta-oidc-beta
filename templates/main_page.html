@@ -11,7 +11,7 @@
         </div>
         <div class="col-md-6">
 	  <p class="text-center">
-	    Log in <button type="button" id="login-toggle" class="btn btn-default btn-sm">with</button> the Okta Sign In Widget
+	    Enter your credentials below to log in <button type="button" id="login-toggle" class="btn btn-default btn-sm">without</button> the Okta Sign In Widget:
 	  </p>
 	  <br/>
           <div id="okta-sign-in-widget"></div>
@@ -59,20 +59,15 @@
 {% endblock %}
 {% block javascript %}
       <script>
-	$("#okta-sign-in-widget").hide();
-	
-	$("#login-toggle").click(
-	function () {
-
-	$("#okta-sign-in-widget").toggle();
-	$("#okta-login").toggle();
-	
-	var text = $("#login-toggle").text();
-	$("#login-toggle").html(
-	text == "without" ? "with" : "without"
-	);
-	}); // click
-	
+        $("#okta-sign-in-widget").hide();
+        $("#login-toggle").click(function () {
+            $("#okta-sign-in-widget").toggle();
+            $("#okta-login").toggle();
+            var text = $("#login-toggle").text();
+            $("#login-toggle").html(
+                    text == "without" ? "with" : "without"
+                );
+            });
         function setupOktaSignIn(baseUrl, clientId) {
             return new OktaSignIn({
                 baseUrl: baseUrl,
