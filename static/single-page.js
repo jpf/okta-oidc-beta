@@ -20,7 +20,6 @@ function renderOktaWidget() {
             }
         },
         function (err) { console.log('Unexpected error authenticating user: %o', err); }
-        
     );
 }
 
