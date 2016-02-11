@@ -1164,7 +1164,11 @@
                </div>
               </div>
               <div class="col-md-6" id="content-right">
-                <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
+                <p class="text-center">
+                  Enter your credentials below to log in <button type="button" id="login-toggle" class="btn btn-default btn-sm">without</button> the Okta Sign In Widget:
+                </p>
+                <br/>
+                <div id="okta-sign-in-widget"></div>
                 <div id="logged-in-user-id" style="display: none;">
                  <p>Logged in as User ID: <span id="okta-user-id"></span></p>
                </div>
@@ -1183,43 +1187,103 @@
     #+END_SRC
 
 ** main_page.html
-    #+BEGIN_SRC html :tangle templates/main_page.html :noweb yes :exports none
-      {% extends "base.html" %}
-      {% block body %}
-            <div class="row">
-              <div class="col-md-6">
-                <p>
-                This is a demonstration of how to use Okta to handle authentication for a server side application.
-                </p>
-                <!-- Source: http://openclipart.org/detail/34273/tango-system-lock-screen-by-warszawianka -->
-                <img src="/static/locked-screen.png" alt="Locked computer screen"/>
-              </div>
-              <div class="col-md-6">
-                <div id="okta-sign-in-widget" style="margin-top: 0px"></div>
-              </div>
-            </div>
-      {% endblock %}
-      {% block javascript %}
-            <script>
-              <<setup-okta-sign-in>>
-              var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
+   #+BEGIN_SRC html :tangle templates/main_page.html :noweb yes :exports none
+     {% extends "base.html" %}
+     {% block body %}
+           <div class="row">
+             <div class="col-md-6">
+               <p>
+               This is a demonstration of how to use Okta to handle authentication for a server side application.
+               </p>
+               <!-- Source: http://openclipart.org/detail/34273/tango-system-lock-screen-by-warszawianka -->
+               <img src="/static/locked-screen.png" alt="Locked computer screen"/>
+             </div>
+             <div class="col-md-6">
+               <p class="text-center">
+                 Enter your credentials below to log in <button type="button" id="login-toggle" class="btn btn-default btn-sm">without</button> the Okta Sign In Widget:
+               </p>
+               <br/>
+               <div id="okta-sign-in-widget"></div>
+               <<form-login-template>>
+             </div>
+           </div>
+     {% endblock %}
+     {% block javascript %}
+           <script>
+             <<login-form-toggle>>
+             <<setup-okta-sign-in>>
+             var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
 
-              oktaSignIn.renderEl(
-                { el: '#okta-sign-in-widget' },
-               function (res) {
-                  console.log(res);
-                  var id_token = res.id_token || res.idToken;
-                  if (res.status === 'SUCCESS') {
-                    $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
-                      window.location.href="/secret";
-                    });
-                  }
-                },
-               function (err) { console.log('Unexpected error authenticating user: %o', err); }
-              );
-            </script>
-      {% endblock %}      
-    #+END_SRC
+             oktaSignIn.renderEl(
+               { el: '#okta-sign-in-widget' },
+              function (res) {
+                 console.log(res);
+                 var id_token = res.id_token || res.idToken;
+                 if (res.status === 'SUCCESS') {
+                   $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
+                     window.location.href="/secret";
+                   });
+                 }
+               },
+              function (err) { console.log('Unexpected error authenticating user: %o', err); }
+             );
+           </script>
+     {% endblock %}      
+   #+END_SRC
+   #+NAME: form-login-template
+   #+BEGIN_SRC html 
+     <div id="okta-login" style="display: block;">
+       <div class="auth-container main-container no-beacon" id="okta-sign-in">
+         <div class="auth-content">
+           <div class="auth-content-inner">
+             <div class="primary-auth">
+               <form action="/" class="primary-auth-form o-form o-form-edit-mode" method="post">
+                 <div class="o-form-content o-form-theme clearfix">
+                   <h2 class="okta-form-title o-form-head">Sign In</h2>
+                   <div class="o-form-error-container"></div>
+                   <div class="o-form-fieldset-container">
+                     <div class="o-form-fieldset o-form-label-top">
+                       <div class="o-form-input">
+                        <span class="okta-form-input-field input-fix o-form-control">
+                         <span class="icon input-icon person-16-gray"></span>
+                         <input autocomplete="off" id="inputUsername" name="username" placeholder="Username" type="text" value="">
+                       </span>
+                       </div>
+                     </div>
+                     <div class="o-form-fieldset o-form-label-top">
+                       <div class="o-form-input">
+                         <span class="okta-form-input-field input-fix o-form-control">
+                           <span class="icon input-icon remote-lock-16"></span>
+                           <input autocomplete="off" id="inputPassword" name="password" placeholder="Password" type="password" value=""></span>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+                 <div class="o-form-button-bar">
+                   <input class="button button-primary" data-type="save" type="submit" value="Sign In">
+                 </div>
+               </form>
+               <div class="auth-footer">
+                 <a href="{{login_with_okta_branding}}">Login using Okta branded page</a>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+   #+END_SRC
+   #+NAME: login-form-toggle
+   #+BEGIN_SRC javascript
+     $("#okta-sign-in-widget").hide();
+     $("#login-toggle").click(function () {
+         $("#okta-sign-in-widget").toggle();
+         $("#okta-login").toggle();
+         var text = $("#login-toggle").text();
+         $("#login-toggle").html(
+             text == "without" ? "with" : "without"
+         );
+     });
+   #+END_SRC
 ** secret.html
     #+BEGIN_SRC html :tangle templates/secret.html :noweb yes :exports none
       {% extends "base.html" %}
