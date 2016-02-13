@@ -321,78 +321,128 @@
    familiar with SAML, this is the same use case as "SP initiated
    SAML".
 
-   Validating a JWT is easy. Here is how to do it in Python using the
-   [[https://github.com/jpadilla/pyjwt#pyjwt][pyjwt]] Python library.
-   
-   (See [[http://jwt.io/#libraries-io][JWT.io]] for a list of JWT libraries in your favorite language.)
+   Authenticating Okta users against your server-side web application
+   consists of these core steps:
+   1. Okta authenticates a user.
+   2. Upon a successful authentication, Okta issues the user an OIDC
+      =id_token= and direct the users browser to deliver the
+      =id_token= to your web application.
+   3. Your server-side web application will validate the =id_token=
+      and, if the token is valid, will create a session for the user
+      so that the user is "logged in" to your web application.
 
-   The [[https://github.com/jpadilla/pyjwt#pyjwt][pyjwt]] library handles a lot of ancillary JWT validation by
-   default. In particular, it validates the =audience= attribute,
-   which means that it will return an error unless the value
-   =audience= attribute matches what we pass into this method.
+   Step 2 is covered below in the "Getting an OIDC =id_token= from
+   Okta" section and Step 3 is covered in the Validating an OIDC
+   =id_token= from Okta section.
 
-   #+NAME: parse-jwt
-   #+BEGIN_SRC python :noweb yes
-     def parse_jwt(id_token):
-         rv = jwt.decode(
-             id_token,
-             public_key,
-             <<force_rs256>>
-             <<audience_client_id>>
-         return rv
-   #+END_SRC
+*** Getting an OIDC =id_token= from Okta
 
-   Note that we are setting two specific parameters to =parse_jwt=:
-   1. Force the JWT signing algorithm to =RS256=
-      
-      This line forces the JWT signing algorithm to =RS256=:
-      #+NAME: force_rs256
-      #+BEGIN_SRC python
-        algorithms='RS256',
-      #+END_SRC
+    Currently, there are three ways to get an =id_token= from Okta,
+    sorted in order if "ease of implementation":
+    1. Having users click on a special link that will redirect them
+       through Okta.
+    2. Authenticating users via the Okta Sign-In Widget.
+    3. Authenticating users via [[http://developer.okta.com/docs/api/resources/authn.html][/authn]] and [[http://developer.okta.com/docs/api/resources/oidc.html][/oauth2]] Okta API endpoints.
 
-      We do this because it is a best practice for handling JWTs and
-      is done to avoid [[https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html][critical vulnerabilities in JSON Web Token libraries]].
+    Which method you select depends on how customized you want the
+    user's login experience to be. 
 
-   2. The OAuth Client ID
+    If you don't care about a customized login experience, the easiest
+    way to get an =id_token= from Okta is to have users click on a
+    special link that will redirect them through Okta to your
+    application.
 
-      This line sets the audience to the value of the Okta OAuth
-      Client ID:
-      #+NAME: audience_client_id
-      #+BEGIN_SRC python
-        audience=okta['client_id'])
-      #+END_SRC
+    The Okta Sign-In Widget handles all possible user states and is
+    moderately customizable. It is a good choice if you don't have
+    extremely detailed design requirements.
 
-      Okta uses the OAuth Client ID as the audience in the
-      =id_token= JWTs that it issues. We pass this value to =pyjwt= so
-      that our JWTs are properly validated.
-   
+    Using the Okta API endpoints directly gives you the most
+    flexibility in terms of customization at the expense of requiring
+    you to support all of the possible flows that your users will go
+    through.
 
-   Where does the =public_key= come from? It is fetched from the
-   [[https://example.okta.com/oauth2/v1/keys][Okta JSON Web Key endpoint]].
+    Details on each of these methods are below:
 
-   The code below demonstrations how to fetch a public key to validate
-   a JWT from Okta, using the endpoint URI defined as part of the JWK
-   standard.
+**** Getting an =id_token= via a special Okta link
+     
+**** Getting an =id_token= via the Okta Sign-In Widget
+     
+**** Getting an =id_token= via Okta API endpoints
+     
+*** Validating an OIDC =id_token= from Okta
+    OIDC =id_token=s are JWTs and validating a JWT is easy. Below is a
+    demonstration of how to validate a JWT in Python using the [[https://github.com/jpadilla/pyjwt#pyjwt][pyjwt]]
+    Python library.
+    
+    (See [[http://jwt.io/#libraries-io][JWT.io]] for a list of JWT libraries in your favorite language.)
 
-   *Note:* This code pulls from the URI directly. It should really be
-   discovering that URI from the =.well-known/openid-configuration= URL endpoint that is
-   used for discovery.
+    The [[https://github.com/jpadilla/pyjwt#pyjwt][pyjwt]] library handles a lot of ancillary JWT validation by
+    default. In particular, it validates the =audience= attribute,
+    which means that it will return an error unless the value
+    =audience= attribute matches what we pass into this method.
+
+    #+NAME: parse-jwt
+    #+BEGIN_SRC python :noweb yes
+      def parse_jwt(id_token):
+          rv = jwt.decode(
+              id_token,
+              public_key,
+              <<force_rs256>>
+              <<audience_client_id>>
+          return rv
+    #+END_SRC
+
+    Note that we are setting two specific parameters to =parse_jwt=:
+    1. Force the JWT signing algorithm to =RS256=
+       
+       This line forces the JWT signing algorithm to =RS256=:
+       #+NAME: force_rs256
+       #+BEGIN_SRC python
+         algorithms='RS256',
+       #+END_SRC
+
+       We do this because it is a best practice for handling JWTs and
+       is done to avoid [[https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html][critical vulnerabilities in JSON Web Token libraries]].
+
+    2. The OAuth Client ID
+
+       This line sets the audience to the value of the Okta OAuth
+       Client ID:
+       #+NAME: audience_client_id
+       #+BEGIN_SRC python
+         audience=okta['client_id'])
+       #+END_SRC
+
+       Okta uses the OAuth Client ID as the audience in the
+       =id_token= JWTs that it issues. We pass this value to =pyjwt= so
+       that our JWTs are properly validated.
+    
+
+    Where does the =public_key= come from? It is fetched from the
+    [[https://example.okta.com/oauth2/v1/keys][Okta JSON Web Key endpoint]].
+
+    The code below demonstrations how to fetch a public key to validate
+    a JWT from Okta, using the endpoint URI defined as part of the JWK
+    standard.
+
+    *Note:* This code pulls from the URI directly. It should really be
+    discovering that URI from the =.well-known/openid-configuration= URL endpoint that is
+    used for discovery.
 
 
-   #+NAME: fetch-jwt-public-key
-   #+BEGIN_SRC python
-     def fetch_jwt_public_key(base_url=None):
-         if base_url is None:
-             raise Exception('base_url required')
-         jwks_url = "{}/oauth2/v1/keys".format(base_url)
-         r = requests.get(jwks_url)
-         jwks = r.json()
-         x5c = jwks['keys'][0]['x5c'][0]
-         pem_data = base64.b64decode(str(x5c))
-         cert = x509.load_der_x509_certificate(pem_data, default_backend())
-         return cert.public_key()
-   #+END_SRC
+    #+NAME: fetch-jwt-public-key
+    #+BEGIN_SRC python
+      def fetch_jwt_public_key(base_url=None):
+          if base_url is None:
+              raise Exception('base_url required')
+          jwks_url = "{}/oauth2/v1/keys".format(base_url)
+          r = requests.get(jwks_url)
+          jwks = r.json()
+          x5c = jwks['keys'][0]['x5c'][0]
+          pem_data = base64.b64decode(str(x5c))
+          cert = x509.load_der_x509_certificate(pem_data, default_backend())
+          return cert.public_key()
+    #+END_SRC
 
 ** Single Page App
 
@@ -816,6 +866,18 @@
         return UserSession(user_id)
   #+END_SRC
 
+   #+NAME: create_authorize_url
+   #+BEGIN_SRC python
+     def create_authorize_url(**kwargs):
+         base_url = kwargs['base_url']
+         del(kwargs['base_url'])
+         redirect_url = "{}/oauth2/v1/authorize?{}".format(
+             base_url,
+             urllib.urlencode(kwargs),
+         )
+         return redirect_url
+   #+END_SRC
+
   #+NAME: flask-app
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
@@ -878,14 +940,7 @@
     <<parse-jwt>>
 
 
-    def create_authorize_url(**kwargs):
-        base_url = kwargs['base_url']
-        del(kwargs['base_url'])
-        redirect_url = "{}/oauth2/v1/authorize?{}".format(
-            base_url,
-            urllib.urlencode(kwargs),
-        )
-        return redirect_url
+    <<create_authorize_url>>
 
 
     <<route_login>>
@@ -1337,6 +1392,8 @@
 ** TODO Add documentation on support for "IDP initiated" flows
    ... where the user redirect flow starts at Okta
 ** TODO Add support for =/sessions/me= to the SPA example
+** TODO Add more strict JWT checks
+   http://tools.ietf.org/html/draft-ietf-oauth-jwt-bearer-08#section-3
 * Learn more
 
   Want to learn more about Open ID Connect and OAuth?
