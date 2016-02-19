@@ -4,6 +4,7 @@ import json
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from nose.tools import raises
 import jwt
 import responses
 import unittest
@@ -98,6 +99,21 @@ class TestFlaskApp(unittest.TestCase):
         print id_token
         rv = self.app.post('/sso/oidc', data={'id_token': id_token})
         self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
+
+    def test_parse_jwt_valid(self):
+        id_token = self.create_jwt({})
+        rv = flask_app.parse_jwt(id_token)
+        self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
+
+    @raises(jwt.InvalidAudienceError)
+    def test_parse_jwt_invalid_audience(self):
+        id_token = self.create_jwt({'aud': 'INVALID'})
+        flask_app.parse_jwt(id_token)
+
+    @raises(jwt.InvalidIssuerError)
+    def test_parse_jwt_invalid_issuer(self):
+        id_token = self.create_jwt({'iss': 'INVALID'})
+        flask_app.parse_jwt(id_token)
 
     @responses.activate
     def test_login_with_password(self):
