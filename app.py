@@ -146,8 +146,8 @@ def create_authorize_url(**kwargs):
 @app.route("/login", methods=['POST'])
 def login_with_password():
     payload = {
-        'username': request.form['inputUsername'],
-        'password': request.form['inputPassword'],
+        'username': request.form['username'],
+        'password': request.form['password'],
         }
 
     authn_url = "{}/api/v1/authn".format(okta['base_url'])
@@ -233,4 +233,4 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     if port == 5000:
         app.debug = True
-    app.run(port=port)
+    app.run("0.0.0.0", port=port)
