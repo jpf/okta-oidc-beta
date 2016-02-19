@@ -20,7 +20,7 @@
               <div class="auth-content">
                 <div class="auth-content-inner">
                   <div class="primary-auth">
-                    <form action="/" class="primary-auth-form o-form o-form-edit-mode" method="post">
+                    <form action="/login" class="primary-auth-form o-form o-form-edit-mode" method="post">
                       <div class="o-form-content o-form-theme clearfix">
                         <h2 class="okta-form-title o-form-head">Sign In</h2>
                         <div class="o-form-error-container"></div>
@@ -69,7 +69,7 @@
             );
         });
         function setupOktaSignIn(baseUrl, clientId) {
-            return new OktaSignIn({
+            var oktaSignIn = new OktaSignIn({
                 baseUrl: baseUrl,
                 clientId: clientId,
                 authParams: {
@@ -78,16 +78,16 @@
                     scope: ['openid']
                 }
             });
+            return oktaSignIn;
         };
         var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
-
         oktaSignIn.renderEl(
           { el: '#okta-sign-in-widget' },
          function (res) {
             console.log(res);
             var id_token = res.id_token || res.idToken;
             if (res.status === 'SUCCESS') {
-              $.post("/sso/oidc", {"id_token": res.id_token}, function(data) {
+              $.post("/sso/oidc", {"id_token": id_token}, function(data) {
                 window.location.href="/secret";
               });
             }

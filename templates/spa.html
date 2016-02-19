@@ -28,7 +28,7 @@
     </script>
     <script type="text/javascript">
       function setupOktaSignIn(baseUrl, clientId) {
-          return new OktaSignIn({
+          var oktaSignIn = new OktaSignIn({
               baseUrl: baseUrl,
               clientId: clientId,
               authParams: {
@@ -37,6 +37,7 @@
                   scope: ['openid']
               }
           });
+          return oktaSignIn;
       };
 
       var oktaSignIn = setupOktaSignIn('{{okta.base_url}}', '{{okta.client_id}}');
