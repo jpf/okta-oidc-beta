@@ -470,6 +470,8 @@
     which means that it will return an error unless the value
     =audience= attribute matches what we pass into this method.
 
+    Here is how we parse a JWT in this sample application:
+
     #+NAME: parse-jwt
     #+BEGIN_SRC python :noweb yes
       def parse_jwt(id_token):
@@ -477,11 +479,24 @@
               id_token,
               public_key,
               <<force_rs256>>
+              <<issuer_base_url>>
               <<audience_client_id>>
           return rv
     #+END_SRC
 
-    Note that we are setting two specific parameters to =parse_jwt=:
+    Here is base test that we use for the =parse_jwt= function:
+
+    #+NAME: test_parse_jwt_valid
+    #+BEGIN_SRC python
+      def test_parse_jwt_valid(self):
+          id_token = self.create_jwt({})
+          rv = flask_app.parse_jwt(id_token)
+          self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
+    #+END_SRC
+
+    Here are some details on the parameters that we are explicitly
+    setting in =parse_jwt=:
+
     1. Force the JWT signing algorithm to =RS256=
        
        This line forces the JWT signing algorithm to =RS256=:
@@ -493,13 +508,44 @@
        We do this because it is a best practice for handling JWTs and
        is done to avoid [[https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html][critical vulnerabilities in JSON Web Token libraries]].
 
-    2. The OAuth Client ID
+    2. The OIDC Issuer
 
-       This line sets the audience to the value of the Okta OAuth
-       Client ID:
+       This line sets the =issuer= to the value of the Okta Base URL,
+       which is what Okta uses as the =issuer=:
+       #+NAME: issuer_base_url
+       #+BEGIN_SRC python
+         issuer=okta['base_url'],
+       #+END_SRC
+
+       And this is how we test that the JWT decoder is properly
+       validating the =issuer=:
+
+       #+NAME: test_parse_jwt_invalid_issuer
+       #+BEGIN_SRC python
+         @raises(jwt.InvalidIssuerError)
+         def test_parse_jwt_invalid_issuer(self):
+             id_token = self.create_jwt({'iss': 'INVALID'})
+             flask_app.parse_jwt(id_token)
+       #+END_SRC
+
+    3. The OIDC Audience
+
+       This line sets the =audience= to the value of the Okta OAuth
+       Client ID, which is what Okta uses as the =audience=:
        #+NAME: audience_client_id
        #+BEGIN_SRC python
          audience=okta['client_id'])
+       #+END_SRC
+
+       And this is how we test that the JWT decoder is properly
+       validating the =audience=:
+
+       #+NAME: test_parse_jwt_invalid_audience
+       #+BEGIN_SRC python 
+             @raises(jwt.InvalidAudienceError)
+             def test_parse_jwt_invalid_audience(self):
+                 id_token = self.create_jwt({'aud': 'INVALID'})
+                 flask_app.parse_jwt(id_token)
        #+END_SRC
 
        Okta uses the OAuth Client ID as the audience in the
@@ -511,9 +557,42 @@
     [[https://example.okta.com/oauth2/v1/keys][Okta JSON Web Key endpoint]] - which can be discovered via the
     [[https://example.okta.com/.well-known/openid-configuration][.well-known/openid-configuration]] URL.
 
-    The code below demonstrations how to fetch a public key to validate
-    a JWT from Okta, using the endpoint URI defined as part of the JWK
-    standard.
+    Below is a demonstration of how to fetch the public key for
+    =example.okta.com= using the command line (on OS X).
+
+    On the first line, we pull down the JSON from
+    =.well-known/openid-configuration= and pull out the =jwks_uri=
+    element using =grep= and a regular expression (the "[[https://github.com/stedolan/jq][jq]]" command line
+    tool is better suited for this, but not installed by
+    default). Once we have the =jwks_uri=, we use that to fetch the
+    key from Okta, pull out the =x5c= key using grep, base64 decode
+    the =x5c= key, then pipe that to =openssl= to extract the public key.
+
+    #+BEGIN_SRC sh :results code :exports both
+      JWKS_URI=`curl -s https://example.okta.com/.well-known/openid-configuration | egrep -o 'jwks_uri":"[^"]*' | cut -d '"' -f 3`;
+      curl -s $JWKS_URI | egrep -o '"x5c":\["[^]]*' | cut -d '"' -f 4 | tr -d '\' | base64 -D | openssl x509 -inform DER -pubkey -noout
+    #+END_SRC
+
+    #+RESULTS:
+    #+BEGIN_SRC sh
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjKb91FLaoZe9/5NEMZrO
+    1eDn4hdrhtjrvsy+qO1QIbbdhRXJIJoE+qpHmgmq1gK28OZCV51xUAwk8ugw5p7/
+    m2wIarykHtXuBmhcFPkWez6N/yX30qvdOPPKUGqd05AoGcrzAW6fV07CRROU+5g1
+    RnTdNasLEMYaq0xPlmCMDjb3usyiafGyyrwg4+tndOTry4uMtF7LeTVLZo9Tnn2x
+    dJiytWWh+Rq5/KAn1mJ2GgwG8tp8o7SRf65c0LYQenN1d6vXX/Iimq/mg//B5CHP
+    zIaUrZfoL+2sbRIyQ5AePlDyn8Neg6sIsV9nTkPAcYvvQsS+/8xnfNq6np0zKbua
+    dQIDAQAB
+    -----END PUBLIC KEY-----
+    #+END_SRC
+
+    #+BEGIN_SRC sh :exports none
+      JWKS_URI=`curl -s https://example.okta.com/.well-known/openid-configuration | jq -r '.jwks_uri'`;
+      curl $JWKS_URI | jq -r '.keys[0].x5c[0]' | base64 -D | openssl x509 -inform DER -pubkey -noout
+    #+END_SRC
+
+    Since this example uses Python, below is how to fetch public keys
+    from Okta using Python.
 
     #+NAME: fetch-jwt-public-key
     #+BEGIN_SRC python
@@ -891,13 +970,13 @@
               json.dumps({'sessionToken': sessionToken}),
               status=200)
           data = {
-              'inputUsername': 'username',
-              'inputPassword': 'password',
+              'username': 'username',
+              'password': 'password',
               }
           rv = self.app.post('/login', data=data)
           self.assertEquals("302 FOUND", rv.status)
           self.assertIn('LOCATION', rv.headers)
-          self.assertIn(sessionToken, rv.headers['Location'])   #+END_SRC
+          self.assertIn(sessionToken, rv.headers['Location'])
     #+END_SRC
 *** /logout
     #+NAME: route_logout
@@ -1118,7 +1197,6 @@
   #+END_SRC
 *** FIXME The public key above (=public_key=) should be fetched via the issuer
 *** FIXME Change =public_key= to =public_keys= and store using okta org FQDN as the "key"
-
 ** tests/test_flask_app.py
    This is how we generate an =RSA PRIVATE KEY= to sign our JWTs.
    #+BEGIN_SRC sh :results code
@@ -1126,8 +1204,8 @@
    #+END_SRC
 
    Here is what a private key should look like:
-   #+NAME: private_key
    #+RESULTS:
+   #+NAME: private_key_for_testing
    #+BEGIN_SRC sh
    -----BEGIN RSA PRIVATE KEY-----
    MIICXgIBAAKBgQDexKjUIXzFV6Cfgt+eQrulNRJkKG6BjboDslLLilyizPNtVs9B
@@ -1152,13 +1230,13 @@
    Essentially, you =cat= or =echo= the private key into
    =openssl=. However we use the =sed= command below to remove the
    leading whitespace that =org-babel= adds in front of the private key.
-   #+BEGIN_SRC sh :var private_key=private_key :results code
+   #+BEGIN_SRC sh :var private_key=private_key_for_testing :results code :exports results
      echo "$private_key" | sed -e 's/^[ ]*//' | openssl rsa -pubout
    #+END_SRC
 
    Here is what a public key should look like:
-   #+NAME: public_key
    #+RESULTS:
+   #+NAME: public_key_for_testing
    #+BEGIN_SRC sh
    -----BEGIN PUBLIC KEY-----
    MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexKjUIXzFV6Cfgt+eQrulNRJk
@@ -1169,13 +1247,14 @@
    #+END_SRC
 
 
-   #+BEGIN_SRC python :tangle templates/test_flask_app.py :noweb yes :exports none :padline no
+   #+BEGIN_SRC python :tangle tests/test_flask_app.py :noweb yes :exports none :padline no
      from datetime import datetime
      import calendar
      import json
 
      from cryptography.hazmat.backends import default_backend
      from cryptography.hazmat.primitives import serialization
+     from nose.tools import raises
      import jwt
      import responses
      import unittest
@@ -1183,11 +1262,11 @@
      import app as flask_app
 
      private_key = '''
-     <<private_key>>
+     <<private_key_for_testing>>
      '''
 
      public_key = '''
-     <<public_key>>
+     <<public_key_for_testing>>
      '''
 
 
@@ -1235,6 +1314,12 @@
          <<test_has_default_route>>
 
          <<test_sso_via_id_token>>
+
+         <<test_parse_jwt_valid>>
+
+         <<test_parse_jwt_invalid_audience>>
+
+         <<test_parse_jwt_invalid_issuer>>
 
          <<test_login_with_password>>
    #+END_SRC

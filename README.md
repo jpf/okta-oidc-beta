@@ -470,15 +470,26 @@ default. In particular, it validates the `audience` attribute,
 which means that it will return an error unless the value
 `audience` attribute matches what we pass into this method.
 
+Here is how we parse a JWT in this sample application:
+
     def parse_jwt(id_token):
         rv = jwt.decode(
             id_token,
             public_key,
             algorithms='RS256',
+            issuer=okta['base_url'],
             audience=okta['client_id'])
         return rv
 
-Note that we are setting two specific parameters to `parse_jwt`:
+Here is base test that we use for the `parse_jwt` function:
+
+    def test_parse_jwt_valid(self):
+        id_token = self.create_jwt({})
+        rv = flask_app.parse_jwt(id_token)
+        self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
+
+Here are some details on the parameters that we are explicitly
+setting in `parse_jwt`:
 
 1.  Force the JWT signing algorithm to `RS256`
     
@@ -489,12 +500,35 @@ Note that we are setting two specific parameters to `parse_jwt`:
     We do this because it is a best practice for handling JWTs and
     is done to avoid [critical vulnerabilities in JSON Web Token libraries](https://www.chosenplaintext.ca/2015/03/31/jwt-algorithm-confusion.html).
 
-2.  The OAuth Client ID
+2.  The OIDC Issuer
     
-    This line sets the audience to the value of the Okta OAuth
-    Client ID:
+    This line sets the `issuer` to the value of the Okta Base URL,
+    which is what Okta uses as the `issuer`:
+    
+        issuer=okta['base_url'],
+    
+    And this is how we test that the JWT decoder is properly
+    validating the `issuer`:
+    
+        @raises(jwt.InvalidIssuerError)
+        def test_parse_jwt_invalid_issuer(self):
+            id_token = self.create_jwt({'iss': 'INVALID'})
+            flask_app.parse_jwt(id_token)
+
+3.  The OIDC Audience
+    
+    This line sets the `audience` to the value of the Okta OAuth
+    Client ID, which is what Okta uses as the `audience`:
     
         audience=okta['client_id'])
+    
+    And this is how we test that the JWT decoder is properly
+    validating the `audience`:
+    
+        @raises(jwt.InvalidAudienceError)
+        def test_parse_jwt_invalid_audience(self):
+            id_token = self.create_jwt({'aud': 'INVALID'})
+            flask_app.parse_jwt(id_token)
     
     Okta uses the OAuth Client ID as the audience in the
     `id_token` JWTs that it issues. We pass this value to `pyjwt` so
@@ -504,9 +538,32 @@ Where does the `public_key` come from? It is fetched from the
 [Okta JSON Web Key endpoint](https://example.okta.com/oauth2/v1/keys) - which can be discovered via the
 [.well-known/openid-configuration](https://example.okta.com/.well-known/openid-configuration) URL.
 
-The code below demonstrations how to fetch a public key to validate
-a JWT from Okta, using the endpoint URI defined as part of the JWK
-standard.
+Below is a demonstration of how to fetch the public key for
+`example.okta.com` using the command line (on OS X).
+
+On the first line, we pull down the JSON from
+`.well-known/openid-configuration` and pull out the `jwks_uri`
+element using `grep` and a regular expression (the "[jq](https://github.com/stedolan/jq)" command line
+tool is better suited for this, but not installed by
+default). Once we have the `jwks_uri`, we use that to fetch the
+key from Okta, pull out the `x5c` key using grep, base64 decode
+the `x5c` key, then pipe that to `openssl` to extract the public key.
+
+    JWKS_URI=`curl -s https://example.okta.com/.well-known/openid-configuration | egrep -o 'jwks_uri":"[^"]*' | cut -d '"' -f 3`;
+    curl -s $JWKS_URI | egrep -o '"x5c":\["[^]]*' | cut -d '"' -f 4 | tr -d '\' | base64 -D | openssl x509 -inform DER -pubkey -noout
+
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjKb91FLaoZe9/5NEMZrO
+    1eDn4hdrhtjrvsy+qO1QIbbdhRXJIJoE+qpHmgmq1gK28OZCV51xUAwk8ugw5p7/
+    m2wIarykHtXuBmhcFPkWez6N/yX30qvdOPPKUGqd05AoGcrzAW6fV07CRROU+5g1
+    RnTdNasLEMYaq0xPlmCMDjb3usyiafGyyrwg4+tndOTry4uMtF7LeTVLZo9Tnn2x
+    dJiytWWh+Rq5/KAn1mJ2GgwG8tp8o7SRf65c0LYQenN1d6vXX/Iimq/mg//B5CHP
+    zIaUrZfoL+2sbRIyQ5AePlDyn8Neg6sIsV9nTkPAcYvvQsS+/8xnfNq6np0zKbua
+    dQIDAQAB
+    -----END PUBLIC KEY-----
+
+Since this example uses Python, below is how to fetch public keys
+from Okta using Python.
 
     def fetch_jwt_public_key(base_url=None):
         if base_url is None:

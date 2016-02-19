@@ -93,7 +93,7 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIn("Set-Cookie", rv.headers)
         self.assertIn("session=", rv.headers['Set-Cookie'])
         self.assertEquals("302 FOUND", rv.status)
-
+    
     def test_sso_via_id_token_invalid(self):
         id_token = self.create_jwt({'aud': 'invalid'})
         print id_token
