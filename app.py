@@ -129,6 +129,7 @@ def parse_jwt(id_token):
         id_token,
         public_key,
         algorithms='RS256',
+        issuer=okta['base_url'],
         audience=okta['client_id'])
     return rv
 
