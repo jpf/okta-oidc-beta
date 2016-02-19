@@ -108,8 +108,8 @@ class TestFlaskApp(unittest.TestCase):
             json.dumps({'sessionToken': sessionToken}),
             status=200)
         data = {
-            'inputUsername': 'username',
-            'inputPassword': 'password',
+            'username': 'username',
+            'password': 'password',
             }
         rv = self.app.post('/login', data=data)
         self.assertEquals("302 FOUND", rv.status)
