@@ -266,7 +266,7 @@ Sign-In Widget. Here is how to configure the Okta Sign-In Widget
 to give you an `id_token`:
 
     function setupOktaSignIn(baseUrl, clientId) {
-        return new OktaSignIn({
+        var oktaSignIn = new OktaSignIn({
             baseUrl: baseUrl,
             clientId: clientId,
             authParams: {
@@ -275,6 +275,7 @@ to give you an `id_token`:
                 scope: ['openid']
             }
         });
+        return oktaSignIn;
     };
 
 Note: Other valid types for `authParams.scope` are: `openid`,
@@ -298,8 +299,169 @@ application authenticate users via OpenID Connect. If you are
 familiar with SAML, this is the same use case as "SP initiated
 SAML".
 
-Validating a JWT is easy. Here is how to do it in Python using the
-[pyjwt](https://github.com/jpadilla/pyjwt#pyjwt) Python library.
+Authenticating Okta users against your server-side web application
+consists of these core steps:
+
+1.  Okta authenticates a user.
+2.  Upon a successful authentication, Okta issues the user an OIDC
+    `id_token` and direct the users browser to deliver the
+    `id_token` to your web application.
+3.  Your server-side web application will validate the `id_token`
+    and, if the token is valid, will create a session for the user
+    so that the user is "logged in" to your web application.
+
+Step 2 is covered below in the "Getting an OIDC `id_token` from
+Okta" section and Step 3 is covered in the "Validating an OIDC
+`id_token` from Okta" section.
+
+### Getting an OIDC `id_token` from Okta
+
+Currently, there are three ways to get an `id_token` from Okta,
+sorted in order if "ease of implementation":
+
+1.  Having users click on a special link that will redirect them
+    through Okta.
+2.  Authenticating users via the Okta Sign-In Widget.
+3.  Authenticating users via [/authn](http://developer.okta.com/docs/api/resources/authn.html) and [/oauth2](http://developer.okta.com/docs/api/resources/oidc.html) Okta API endpoints.
+
+Which method you select depends on how customized you want the
+user's login experience to be. 
+
+If you don't care about a customized login experience, the easiest
+way to get an `id_token` from Okta is to have users click on a
+special link that will redirect them through Okta to your
+application.
+
+The Okta Sign-In Widget handles all possible user states and is
+moderately customizable. It is a good choice if you don't have
+extremely detailed design requirements.
+
+Using the Okta API endpoints directly gives you the most
+flexibility in terms of customization at the expense of requiring
+you to support all of the possible flows that your users will go
+through.
+
+Details on each of these methods are below:
+
+### Getting an `id_token` via a special Okta link
+
+If you don't mind your users seeing an Okta branded login page,
+having your users login to your application using the OpenID
+Connect "Code Flow".
+
+The basics of implementing the Code Flow are below. For more
+information in the Code Flow, we suggest reading the "OpenID Connect Basic Client
+Implementer's Guide", which contains a good [guide to implementing the
+OIDC Code Flow](https://openid.net/specs/openid-connect-basic-1_0.html#CodeFlow).
+
+See our [OIDC documentation for details on the request parameters](http://developer.okta.com/docs/api/resources/oidc.html#request-parameters)
+for more details on how Okta uses the OIDC request parameters.
+
+Below is an example of what this link might look like:
+
+    https://example.okta.com/oauth2/v1/authorize?redirect_uri=https%3A%2F%2Fexample.com%2Fsse%2Foidc&response_type=id_token&client_id=a0bcdEfGhIJkLmNOPQr1&scope=openid&response_mode=form_post
+
+### Getting an `id_token` via the Okta Sign-In Widget
+
+The easiest way customize the login experience that your users
+see is to use the [Okta Sign-In Widget](http://developer.okta.com/docs/guides/okta_sign-in_widget.html).
+
+To use the Okta Sign-In Widget with your application, follow the
+[guide for setting up the Okta Sign-In Widget](http://developer.okta.com/docs/guides/okta_sign-in_widget.html) but make the
+following two changes to your configuration of the Okta Sign-In Widget:
+
+1.  Configure the Sign-In Widget to request an OIDC `id_token`:
+    
+        var oktaSignIn = new OktaSignIn({
+            baseUrl: baseUrl,
+            clientId: clientId,
+            authParams: {
+                responseType: 'id_token',
+                responseMode: 'okta_post_message',
+                scope: ['openid']
+            }
+        });
+2.  Add a "SUCCESS" handler to the widget which will extract the
+    `id_token` and pass it on to your application backend service.
+    
+    Here is how this is done in the example application in this project:
+    
+        oktaSignIn.renderEl(
+          { el: '#okta-sign-in-widget' },
+         function (res) {
+            console.log(res);
+            var id_token = res.id_token || res.idToken;
+            if (res.status === 'SUCCESS') {
+              $.post("/sso/oidc", {"id_token": id_token}, function(data) {
+                window.location.href="/secret";
+              });
+            }
+          },
+         function (err) { console.log('Unexpected error authenticating user: %o', err); }
+        );
+
+### Getting an `id_token` via Okta API endpoints
+
+Lastly, if you need to make customizations to the login
+experience beyond what the Sign-In Widget allows, you can do that
+by making API requests directly to the Okta API.
+
+At a high level, what you will need to do is write some code on
+your application backend that will do the following:
+
+-   Accepts a **username** and **password**
+-   Uses the **username** and **password** to make a request to Okta's
+    `/authn` API endpoint and extracts the `sessionToken` from the
+    results of a successful request.
+-   Redirects the user to an Okta's `/oauth2/v1/authorize` API
+    endpoint using the `sessionToken` in the request parameters.
+
+Here is how this is done in the example application:
+
+    @app.route("/login", methods=['POST'])
+    def login_with_password():
+        payload = {
+            'username': request.form['username'],
+            'password': request.form['password'],
+            }
+    
+        authn_url = "{}/api/v1/authn".format(okta['base_url'])
+        r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
+        result = r.json()
+    
+        redirect_uri = url_for(
+            'sso_oidc',
+            _external=True,
+            _scheme='https')
+        redirect_url = create_authorize_url(
+            base_url=okta['base_url'],
+            sessionToken=result['sessionToken'],
+            client_id=okta['client_id'],
+            scope='openid',
+            response_type='id_token',
+            response_mode='form_post',
+            redirect_uri=redirect_uri,
+            )
+        return redirect(redirect_url)
+
+And here is the `create_authorize_url` function that is used to
+construct the request to `/oauth2/v1/authorize` with the proper
+request parameters:
+
+    def create_authorize_url(**kwargs):
+        base_url = kwargs['base_url']
+        del(kwargs['base_url'])
+        redirect_url = "{}/oauth2/v1/authorize?{}".format(
+            base_url,
+            urllib.urlencode(kwargs),
+        )
+        return redirect_url
+
+### Validating an OIDC `id_token` from Okta
+
+An OIDC `id_token` is a JWT and validating a JWT is easy. Below is a
+demonstration of how to validate a JWT in Python using the [pyjwt](https://github.com/jpadilla/pyjwt#pyjwt)
+Python library.
 
 (See [JWT.io](http://jwt.io/#libraries-io) for a list of JWT libraries in your favorite language.)
 
@@ -339,15 +501,12 @@ Note that we are setting two specific parameters to `parse_jwt`:
     that our JWTs are properly validated.
 
 Where does the `public_key` come from? It is fetched from the
-[Okta JSON Web Key endpoint](https://example.okta.com/oauth2/v1/keys).
+[Okta JSON Web Key endpoint](https://example.okta.com/oauth2/v1/keys) - which can be discovered via the
+[.well-known/openid-configuration](https://example.okta.com/.well-known/openid-configuration) URL.
 
 The code below demonstrations how to fetch a public key to validate
 a JWT from Okta, using the endpoint URI defined as part of the JWK
 standard.
-
-**Note:** This code pulls from the URI directly. It should really be
-discovering that URI from the `.well-known/openid-configuration` URL endpoint that is
-used for discovery.
 
     def fetch_jwt_public_key(base_url=None):
         if base_url is None:
@@ -359,6 +518,10 @@ used for discovery.
         pem_data = base64.b64decode(str(x5c))
         cert = x509.load_der_x509_certificate(pem_data, default_backend())
         return cert.public_key()
+
+**Note:** The code above pulls from the URI directly. It should really be
+discovering that URI from the `.well-known/openid-configuration` URL endpoint that is
+used for discovery.
 
 ## Single Page App
 
@@ -572,4 +735,5 @@ Here is what we suggest that you read to learn more:
 -   [OpenID Connect Implicit Client Implementer's Guide](http://openid.net/specs/openid-connect-implicit-1_0.html)
     
     An official guide for implementing the "implicit" flow. Language
-    agnostic and very useful for learning the details on how things work.
+    agnostic and very useful for learning the details on how things
+    work.
