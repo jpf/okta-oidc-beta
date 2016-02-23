@@ -1,12 +1,16 @@
 import base64
+import json
 import os
+import re
+import urllib
+import urlparse
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from flask import Flask
+from flask import redirect
 from flask import render_template
 from flask import request
-from flask import redirect
 from flask import url_for
 from flask.ext.login import LoginManager
 from flask.ext.login import current_user
@@ -16,15 +20,8 @@ from flask.ext.login import logout_user
 import flask
 import jwt
 import requests
-import urllib
-import json
 
-app = Flask(__name__)
-
-# NOTE: Change this to something else!
-# FIXME: Change this to use os.environ.get
-# This is used by flask-login to hash the cookies that it gives to logged in users
-app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
+not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
 required = {
     'base_url': {
@@ -48,19 +45,22 @@ for key in required.keys():
     if okta[key]:
         del(required[key])
 
-
-# Note: This will only work for one org
-# doing a "SAML-esq" login will require a change to how id_tokens are processed
-# change this to a Python Dictionary, where the key is the domain name
-public_key = None
-
 headers = {
-    # This is only used for social transaction calls
+    # "Authorization" is only needed for social transaction calls
     'Authorization': 'SSWS {}'.format(okta['api_token']),
     'Content-Type': 'application/json',
     'Accept': 'application/json',
 }
 
+app = Flask(__name__)
+
+public_keys = {}
+allowed_domains = ['okta.com', 'oktapreview.com']
+# The 'app.secret_key' variable is used by flask-login
+# to hash the cookies that it gives to logged in users.
+# Since the Okta API token must be kept secret, we will reuse it here.
+# You should set this to your own secret value in a production environment!
+app.secret_key = okta['api_token']
 
 login_manager = LoginManager()
 login_manager.setup_app(app)
@@ -94,17 +94,51 @@ def load_user(user_id):
     # print "Loading user: " + user_id
     return UserSession(user_id)
 
+def domain_name_for(url):
+    second_to_last_element = -2
+    domain_parts = url.netloc.split('.')
+    (sld, tld) = domain_parts[second_to_last_element:]
+    return sld + '.' + tld
 
-def fetch_jwt_public_key(base_url=None):
-    if base_url is None:
-        raise Exception('base_url required')
-    jwks_url = "{}/oauth2/v1/keys".format(base_url)
-    r = requests.get(jwks_url)
-    jwks = r.json()
-    x5c = jwks['keys'][0]['x5c'][0]
-    pem_data = base64.b64decode(str(x5c))
-    cert = x509.load_der_x509_certificate(pem_data, default_backend())
-    return cert.public_key()
+def fetch_jwt_public_key_for(id_token=None):
+    if id_token is None:
+        raise NameError('id_token is required')
+
+    dirty_id_token = jwt.decode(id_token, verify=False)
+    dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+    if domain_name_for(dirty_url) not in allowed_domains:
+        raise ValueError('The domain in the issuer claim is not allowed')
+    cleaned_issuer = dirty_url.geturl()
+    if 'kid' in dirty_id_token:
+        cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
+    else:
+        cleaned_key_id = cleaned_issuer
+
+    if cleaned_key_id in public_keys:
+        return public_keys[cleaned_key_id]
+    else:
+        oidc_discovery_url = "{}/.well-known/openid-configuration".format(
+            cleaned_issuer)
+        r = requests.get(oidc_discovery_url)
+        openid_configuration = r.json()
+        jwks_uri = openid_configuration['jwks_uri']
+        r = requests.get(jwks_uri)
+        jwks = r.json()
+        for key in jwks['keys']:
+            if 'kid' in dirty_id_token:
+                jwk_id = key['kid']
+            else:
+                jwk_id = cleaned_key_id
+            first_element = 0
+            jwk_x5c = key['x5c'][first_element]
+            der_data = base64.b64decode(str(jwk_x5c))
+            cert = x509.load_der_x509_certificate(der_data, default_backend())
+            public_keys[jwk_id] = cert.public_key()
+
+    if cleaned_key_id in public_keys:
+        return public_keys[cleaned_key_id]
+    else:
+        raise RuntimeError("Unable to fetch public key from jwks_uri")
 
 
 @app.route("/spa")
@@ -125,6 +159,7 @@ def logged_in():
 
 
 def parse_jwt(id_token):
+    public_key = fetch_jwt_public_key_for(id_token)
     rv = jwt.decode(
         id_token,
         public_key,
@@ -225,11 +260,6 @@ def main_page():
 
 
 if __name__ == "__main__":
-    try:
-        public_key = fetch_jwt_public_key(okta['base_url'])
-    except:
-        pass
-
     # Bind to PORT if defined, otherwise default to 5000.
     port = int(os.environ.get('PORT', 5000))
     if port == 5000:

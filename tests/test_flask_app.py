@@ -11,30 +11,47 @@ import unittest
 
 import app as flask_app
 
+certificate = '''
+-----BEGIN CERTIFICATE-----
+MIICITCCAYqgAwIBAgIJAPvk/teL+BzRMA0GCSqGSIb3DQEBBQUAMBYxFDASBgNV
+BAMTC2V4YW1wbGUuY29tMB4XDTE2MDIyMzAwNTg1M1oXDTE3MDIyMjAwNTg1M1ow
+FjEUMBIGA1UEAxMLZXhhbXBsZS5jb20wgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJ
+AoGBANisgEmNjzbaEv3Qpu8bP8V9utRsN8JxJxzUjNSf3k7Uj4BfAFfJpKHQcmFc
+TO0G8qR8P34qrsGXHwSZF8ajrOJP59nSYTRaFm/zucXC950CmwLBMS3+vdU02xGb
+AYZJfFOVtiPU4HdB0Z7KX0aTXbtqRJEEF63tjZcJ7M67zT1xAgMBAAGjdzB1MB0G
+A1UdDgQWBBSSEwsnoHW75GR+74R+9RJDHlMCJTBGBgNVHSMEPzA9gBSSEwsnoHW7
+5GR+74R+9RJDHlMCJaEapBgwFjEUMBIGA1UEAxMLZXhhbXBsZS5jb22CCQD75P7X
+i/gc0TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBBQUAA4GBACJdQamPTI/qf6fo
+ovWrffMKnreULYrYAaL4drzQezUpoZ626/Ur3CwpIKqWDsYSvjwKPl0DUyLEuw5J
+2QD4X5n/K7/YGGQJSK8fxazsHavyxQhen1uz7X7zWFflIM6+5DvnOtoq3F0yQ84h
+L6U2LeRpzO4rWw3kxr/jsGkxYaUR
+-----END CERTIFICATE-----
+'''
+
 private_key = '''
 -----BEGIN RSA PRIVATE KEY-----
-MIICXgIBAAKBgQDexKjUIXzFV6Cfgt+eQrulNRJkKG6BjboDslLLilyizPNtVs9B
-yvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuTzJ+z6xUa6obwU6kXM6QJR+kI
-GApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMSfTIA4SjQZXPv/VbMqwIDAQAB
-AoGBAJW/j1oiNLSX5jK0EExbwbYZygYoI7jVI+EOQ5ftp74Mleq/O02X982A16U/
-5Ppb8KpSCvTMLBOjnsIRuK7HhGmouiIW3H9IwZAFJ7yGSSlQ6js104cnDqMKWiu+
-eig9rMQPKEStQqxGhWVvcZZmvLdlslVehbsVDBeuskdOIPfBAkEA+T2mqhjqQKTx
-HY19sJyiz1WIJ4eE5BkpQwPi9mbj74XQABU1AY7ZXbVzvHsAYuEOJVMu7oeoah5p
-uSwZip7NywJBAOTPOQx5+sownE50ZyMQpA1ym15GRuBY6Meto5/xZ5sSeQKosswv
-TYSg5Q1Dh7c8OiLTIl/IR6fCI1fUrUl6IKECQQDol078N6oLz6EvagYcleAdynz4
-HrC2SIDICE16koQt11tHaIMBxDQ3DglGoCa5H7sau+j1MmXJOj6BTpU7Vn1HAkAr
-JwnTWI374/8WrM1mx5SpFJxIw2hKl3oPbqgVWin4DRvVbIuMBr/P66hHQB0waaNt
-PfSVq+gXs32G6w1jdi0BAkEA8IUP5Nthi4gEQ6VVvcocxITswPSgIXSrWlzrdpBl
-zWuB3EAOQrHd+1Ks7R887uNs6Yce96COoADys2mkd2eKMg==
+MIICXQIBAAKBgQDYrIBJjY822hL90KbvGz/FfbrUbDfCcScc1IzUn95O1I+AXwBX
+yaSh0HJhXEztBvKkfD9+Kq7Blx8EmRfGo6ziT+fZ0mE0WhZv87nFwvedApsCwTEt
+/r3VNNsRmwGGSXxTlbYj1OB3QdGeyl9Gk127akSRBBet7Y2XCezOu809cQIDAQAB
+AoGBALU3MORTfOAHa7LUe4mnZKKsEUHwcIIzWN8H9fEu9CNCK/LVgdfqUcL0L3W2
+WLA1C2L+d6vxzs8isVKLKBN+eOwUnhbMbMtD8h1SbTUV/JFrZsHycNcff4ythjLW
+dMo91+t7EcMKDVmej384Saj8D0z2i1QItvBK/msmSQqdYMXxAkEA72IanU3e5EI1
+rkII0/eVLliK6IM+uhaCgAz7Pt7bxntO2NZ8rscn93v6X7SS2Q/QQKyfsT+AbCXk
+bMCQE/AsFwJBAOe22JWgT1kIlmPVOaid/XErVV9YYdy7SxkAhvQYzHagWfhQaGpX
+sMrX1D5i4eIO9JHRu5zPupCGXRWT43UWr7cCQAi61Smja1t7pqWCNvwz7TbRd89e
+6eyzYXL2BjuWuQEWAhwaRlXBYY2+8bSHy0srLncNVI2MOUy4XQoyQ47WlWUCQGZM
+vZZhrmZ6ehsdWlVtWyWJoil0FdCkB+XD69D82dhNtysAJPk+Odl0LEpW0a9CNwvh
+8tiqhY2lJJeQMU3SdEUCQQCxJ5bXPM5iVDBzV50l3DfDN71srr9KGdCahCuxQpRt
+3ZRkZkz9izeRgRM5GRbOM7xpMWKLXFF0E7Y7jF3aa6xD
 -----END RSA PRIVATE KEY-----
 '''
 
 public_key = '''
 -----BEGIN PUBLIC KEY-----
-MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexKjUIXzFV6Cfgt+eQrulNRJk
-KG6BjboDslLLilyizPNtVs9ByvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuT
-zJ+z6xUa6obwU6kXM6QJR+kIGApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMS
-fTIA4SjQZXPv/VbMqwIDAQAB
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDYrIBJjY822hL90KbvGz/FfbrU
+bDfCcScc1IzUn95O1I+AXwBXyaSh0HJhXEztBvKkfD9+Kq7Blx8EmRfGo6ziT+fZ
+0mE0WhZv87nFwvedApsCwTEt/r3VNNsRmwGGSXxTlbYj1OB3QdGeyl9Gk127akSR
+BBet7Y2XCezOu809cQIDAQAB
 -----END PUBLIC KEY-----
 '''
 
@@ -52,6 +69,29 @@ class TestFlaskApp(unittest.TestCase):
         flask_app.public_key = serialization.load_pem_public_key(
             public_key,
             backend=default_backend())
+        x5c_certificate = ''.join(certificate.split("\n")[2:-2])
+        self.oauth2_v1_keys_response = {
+            'keys': [{
+                'kid': 'TEST',
+                'x5c': [x5c_certificate, 'FAKE', 'FAKE']
+                }]
+            }
+        for domain in ['example.okta.com',
+                       'example.oktapreview.com',
+                       'invalid.example.com',
+                       'invalid.okta.com']:
+            responses.add(
+                responses.GET,
+                'https://{}/.well-known/openid-configuration'.format(domain),
+                json.dumps({
+                    'jwks_uri': 'https://{}/oauth2/v1/keys'.format(domain)
+                }),
+                status=200)
+            responses.add(
+                responses.GET,
+                'https://{}/oauth2/v1/keys'.format(domain),
+                json.dumps(self.oauth2_v1_keys_response),
+                status=200)
 
     def tearDown(self):
         pass
@@ -86,6 +126,7 @@ class TestFlaskApp(unittest.TestCase):
         self.assertEquals("200 OK", rv.status)
         self.assertIn("<html", rv.data)
 
+    @responses.activate
     def test_sso_via_id_token(self):
         id_token = self.create_jwt()
         print id_token
@@ -94,26 +135,42 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIn("session=", rv.headers['Set-Cookie'])
         self.assertEquals("302 FOUND", rv.status)
     
+    @responses.activate
     def test_sso_via_id_token_invalid(self):
         id_token = self.create_jwt({'aud': 'invalid'})
         print id_token
         rv = self.app.post('/sso/oidc', data={'id_token': id_token})
         self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
 
+    @responses.activate
     def test_parse_jwt_valid(self):
         id_token = self.create_jwt({})
         rv = flask_app.parse_jwt(id_token)
         self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
 
+    @responses.activate
     @raises(jwt.InvalidAudienceError)
     def test_parse_jwt_invalid_audience(self):
         id_token = self.create_jwt({'aud': 'INVALID'})
         flask_app.parse_jwt(id_token)
 
+    @responses.activate
     @raises(jwt.InvalidIssuerError)
     def test_parse_jwt_invalid_issuer(self):
-        id_token = self.create_jwt({'iss': 'INVALID'})
+        id_token = self.create_jwt({'iss': 'https://invalid.okta.com'})
         flask_app.parse_jwt(id_token)
+    
+    @responses.activate
+    @raises(ValueError)
+    def test_parse_jwt_invalid_issuer_domain(self):
+        id_token = self.create_jwt({'iss': 'https://invalid.example.com'})
+        flask_app.parse_jwt(id_token)
+    
+    
+
+    @raises(NameError)
+    def test_fetch_public_key_for_when_empty(self):
+        flask_app.fetch_jwt_public_key_for()
 
     @responses.activate
     def test_login_with_password(self):

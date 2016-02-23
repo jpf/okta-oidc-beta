@@ -475,6 +475,7 @@
     #+NAME: parse-jwt
     #+BEGIN_SRC python :noweb yes
       def parse_jwt(id_token):
+          public_key = fetch_jwt_public_key_for(id_token)
           rv = jwt.decode(
               id_token,
               public_key,
@@ -488,6 +489,7 @@
 
     #+NAME: test_parse_jwt_valid
     #+BEGIN_SRC python
+      @responses.activate
       def test_parse_jwt_valid(self):
           id_token = self.create_jwt({})
           rv = flask_app.parse_jwt(id_token)
@@ -522,10 +524,19 @@
 
        #+NAME: test_parse_jwt_invalid_issuer
        #+BEGIN_SRC python
+         @responses.activate
          @raises(jwt.InvalidIssuerError)
          def test_parse_jwt_invalid_issuer(self):
-             id_token = self.create_jwt({'iss': 'INVALID'})
+             id_token = self.create_jwt({'iss': 'https://invalid.okta.com'})
              flask_app.parse_jwt(id_token)
+
+         @responses.activate
+         @raises(ValueError)
+         def test_parse_jwt_invalid_issuer_domain(self):
+             id_token = self.create_jwt({'iss': 'https://invalid.example.com'})
+             flask_app.parse_jwt(id_token)
+
+
        #+END_SRC
 
     3. The OIDC Audience
@@ -542,10 +553,11 @@
 
        #+NAME: test_parse_jwt_invalid_audience
        #+BEGIN_SRC python 
-             @raises(jwt.InvalidAudienceError)
-             def test_parse_jwt_invalid_audience(self):
-                 id_token = self.create_jwt({'aud': 'INVALID'})
-                 flask_app.parse_jwt(id_token)
+         @responses.activate
+         @raises(jwt.InvalidAudienceError)
+         def test_parse_jwt_invalid_audience(self):
+             id_token = self.create_jwt({'aud': 'INVALID'})
+             flask_app.parse_jwt(id_token)
        #+END_SRC
 
        Okta uses the OAuth Client ID as the audience in the
@@ -591,26 +603,135 @@
       curl $JWKS_URI | jq -r '.keys[0].x5c[0]' | base64 -D | openssl x509 -inform DER -pubkey -noout
     #+END_SRC
 
-    Since this example uses Python, below is how to fetch public keys
-    from Okta using Python.
+*** Fetching public keys for OIDC in Python
+    Since this example uses Python, below is an example of how to
+    autodiscover the JWKS URL for an Okta OIDC endpoint by appending
+    the =/.well-known/openid-configuration=  string to the end of the
+    URL that is in the =iss= OIDC claim.
 
-    #+NAME: fetch-jwt-public-key
+    Below is some Python code that demonstrates how to automatically
+    discover the JWKS URL and parse the public keys from that URL in.
+
+    This is what it does:
+    1. Takes the URL from the  =iss= in the =id_token= and appends
+      =/.well-known/openid-configuration= to the end of the the URL.
+    2. Fetches the combined URL and takes the =jwks_uri= key from the results.
+    3. Fetches the =jwks_uri= and, for each key in the result, it does
+       the following:
+       - Takes the first element in the =x5c= value
+       - Base64 decodes the DER encoded x509 certificate
+       - Parses the DER encoded x509 certificate using the Python
+         =cryptography= library.
+       - Stores the public key in a hash, using the "Key ID" as the value.
+
+    #+NAME: autodiscover_jwks_and_load_public_keys
     #+BEGIN_SRC python
-      def fetch_jwt_public_key(base_url=None):
-          if base_url is None:
-              raise Exception('base_url required')
-          jwks_url = "{}/oauth2/v1/keys".format(base_url)
-          r = requests.get(jwks_url)
-          jwks = r.json()
-          x5c = jwks['keys'][0]['x5c'][0]
-          pem_data = base64.b64decode(str(x5c))
-          cert = x509.load_der_x509_certificate(pem_data, default_backend())
-          return cert.public_key()
+      oidc_discovery_url = "{}/.well-known/openid-configuration".format(
+          cleaned_issuer)
+      r = requests.get(oidc_discovery_url)
+      openid_configuration = r.json()
+      jwks_uri = openid_configuration['jwks_uri']
+      r = requests.get(jwks_uri)
+      jwks = r.json()
+      for key in jwks['keys']:
+          if 'kid' in dirty_id_token:
+              jwk_id = key['kid']
+          else:
+              jwk_id = cleaned_key_id
+          first_element = 0
+          jwk_x5c = key['x5c'][first_element]
+          der_data = base64.b64decode(str(jwk_x5c))
+          cert = x509.load_der_x509_certificate(der_data, default_backend())
+          public_keys[jwk_id] = cert.public_key()
     #+END_SRC
 
-    *Note:* The code above pulls from the URI directly. It should really be
-    discovering that URI from the =.well-known/openid-configuration= URL endpoint that is
-    used for discovery.
+    Below is a quote from the [[https://tools.ietf.org/html/draft-ietf-jose-json-web-key-31#section-4.7]["x5c" section in the JSON Web Key specification]]:
+    
+    #+BEGIN_QUOTE
+    The "x5c" (X.509 Certificate Chain) member contains a chain of one
+    or more PKIX certificates [RFC5280].  The certificate chain is
+    represented as a JSON array of certificate value strings.  Each
+    string in the array is a base64 encoded ([RFC4648] Section 4 --
+    not base64url encoded) DER [ITU.X690.1994] PKIX certificate value.
+    The PKIX certificate containing the key value MUST be the first
+    certificate.  This MAY be followed by additional certificates,
+    with each subsequent certificate being the one used to certify the
+    previous one.  The key in the first certificate MUST match the
+    public key represented by other members of the JWK.  Use of this
+    member is OPTIONAL.
+
+    As with the "x5u" member, members other than those representing
+    the public key may also be populated when an "x5c" member is
+    present.  If other members are present, the contents of those
+    members MUST be semantically consistent with the related fields in
+    the first certificate.  See the last paragraph of Section 4.6 for
+    additional guidance on this.
+    #+END_QUOTE
+
+    When extracting the =iss= and =kid= claims from the =id_token= we
+    strongly urge you to treat those values as untrusted and validate
+    the contents of those claims before using them.
+    
+    Here is what we do in our example code:
+    1. Parse the URL in the =iss= claim and check that the domain
+       matches "okta.com" or "oktapreview.com".
+    2. Remove all non-alphanumeric characters from the =kid= claim.
+
+    #+NAME: clean_inputs_from_id_token
+    #+BEGIN_SRC python
+      dirty_id_token = jwt.decode(id_token, verify=False)
+      dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+      if domain_name_for(dirty_url) not in allowed_domains:
+          raise ValueError('The domain in the issuer claim is not allowed')
+      cleaned_issuer = dirty_url.geturl()
+      if 'kid' in dirty_id_token:
+          cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
+      else:
+          cleaned_key_id = cleaned_issuer
+    #+END_SRC
+
+    For reference, here is the Python function that converts a URL
+    like "https://example.okta.com" into a string with just the
+    "second level domain" and the "top level domain", like this: "okta.com"
+    #+NAME: domain_name_for
+    #+BEGIN_SRC python
+      def domain_name_for(url):
+          second_to_last_element = -2
+          domain_parts = url.netloc.split('.')
+          (sld, tld) = domain_parts[second_to_last_element:]
+          return sld + '.' + tld
+    #+END_SRC
+
+
+    Finally, here is what the function looks like when it's all put
+    together, with additional error handling code:
+
+    #+NAME: fetch-jwt-public-key-for
+    #+BEGIN_SRC python :noweb yes
+      def fetch_jwt_public_key_for(id_token=None):
+          if id_token is None:
+              raise NameError('id_token is required')
+
+          <<clean_inputs_from_id_token>>
+
+          if cleaned_key_id in public_keys:
+              return public_keys[cleaned_key_id]
+          else:
+              <<autodiscover_jwks_and_load_public_keys>>
+
+          if cleaned_key_id in public_keys:
+              return public_keys[cleaned_key_id]
+          else:
+              raise RuntimeError("Unable to fetch public key from jwks_uri")
+    #+END_SRC
+
+    #+NAME: test_fetch_public_key_for_when_empty :exports none
+    #+BEGIN_SRC python
+      @raises(NameError)
+      def test_fetch_public_key_for_when_empty(self):
+          flask_app.fetch_jwt_public_key_for()
+    #+END_SRC
+
 ** Single Page App
 
    This use case demonstrates how to have a Single Page application
@@ -1001,6 +1122,7 @@
 
     #+NAME: test_sso_via_id_token
     #+BEGIN_SRC python
+      @responses.activate
       def test_sso_via_id_token(self):
           id_token = self.create_jwt()
           print id_token
@@ -1009,6 +1131,7 @@
           self.assertIn("session=", rv.headers['Set-Cookie'])
           self.assertEquals("302 FOUND", rv.status)
 
+      @responses.activate
       def test_sso_via_id_token_invalid(self):
           id_token = self.create_jwt({'aud': 'invalid'})
           print id_token
@@ -1033,14 +1156,18 @@
   #+NAME: imports
   #+BEGIN_SRC python
     import base64
+    import json
     import os
+    import re
+    import urllib
+    import urlparse
 
     from cryptography import x509
     from cryptography.hazmat.backends import default_backend
     from flask import Flask
+    from flask import redirect
     from flask import render_template
     from flask import request
-    from flask import redirect
     from flask import url_for
     from flask.ext.login import LoginManager
     from flask.ext.login import current_user
@@ -1050,8 +1177,6 @@
     import flask
     import jwt
     import requests
-    import urllib
-    import json
   #+END_SRC
 *** Setup Flask-Login
     https://flask-login.readthedocs.org/en/latest/
@@ -1107,12 +1232,7 @@
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
 
-    app = Flask(__name__)
-
-    # NOTE: Change this to something else!
-    # FIXME: Change this to use os.environ.get
-    # This is used by flask-login to hash the cookies that it gives to logged in users
-    app.secret_key = 'BF7E16AC-8128-11E5-AD07-B098F0F8B08E'
+    not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
     required = {
         'base_url': {
@@ -1136,24 +1256,28 @@
         if okta[key]:
             del(required[key])
 
-
-    # Note: This will only work for one org
-    # doing a "SAML-esq" login will require a change to how id_tokens are processed
-    # change this to a Python Dictionary, where the key is the domain name
-    public_key = None
-
     headers = {
-        # This is only used for social transaction calls
+        # "Authorization" is only needed for social transaction calls
         'Authorization': 'SSWS {}'.format(okta['api_token']),
         'Content-Type': 'application/json',
         'Accept': 'application/json',
     }
 
+    app = Flask(__name__)
+
+    public_keys = {}
+    allowed_domains = ['okta.com', 'oktapreview.com']
+    # The 'app.secret_key' variable is used by flask-login
+    # to hash the cookies that it gives to logged in users.
+    # Since the Okta API token must be kept secret, we will reuse it here.
+    # You should set this to your own secret value in a production environment!
+    app.secret_key = okta['api_token']
 
     <<setup-flask-login-manager>>
 
+    <<domain_name_for>>
 
-    <<fetch-jwt-public-key>>
+    <<fetch-jwt-public-key-for>>
 
 
     <<route_spa>>
@@ -1184,11 +1308,6 @@
 
 
     if __name__ == "__main__":
-        try:
-            public_key = fetch_jwt_public_key(okta['base_url'])
-        except:
-            pass
-
         # Bind to PORT if defined, otherwise default to 5000.
         port = int(os.environ.get('PORT', 5000))
         if port == 5000:
@@ -1198,54 +1317,126 @@
 *** FIXME The public key above (=public_key=) should be fetched via the issuer
 *** FIXME Change =public_key= to =public_keys= and store using okta org FQDN as the "key"
 ** tests/test_flask_app.py
-   This is how we generate an =RSA PRIVATE KEY= to sign our JWTs.
-   #+BEGIN_SRC sh :results code
-     openssl genrsa 1024
+   In order to simulate connecting to a JWKs endpoint, we need a
+   certificate to use for use in our unit tests. Below is how to
+   generate a private key and certificate using OpenSSL. Note that we
+   use =/dev/stdout= to capture the output from the command into =org-babel=.
+
+   #+BEGIN_SRC sh :results html
+   openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -subj "/CN=example.com" -keyout /dev/stdout -out /dev/stdout
    #+END_SRC
 
-   Here is what a private key should look like:
+   #+RESULTS:
+   #+NAME: private_key_and_certificate
+   #+BEGIN_HTML
+   -----BEGIN RSA PRIVATE KEY-----
+   MIICXQIBAAKBgQDYrIBJjY822hL90KbvGz/FfbrUbDfCcScc1IzUn95O1I+AXwBX
+   yaSh0HJhXEztBvKkfD9+Kq7Blx8EmRfGo6ziT+fZ0mE0WhZv87nFwvedApsCwTEt
+   /r3VNNsRmwGGSXxTlbYj1OB3QdGeyl9Gk127akSRBBet7Y2XCezOu809cQIDAQAB
+   AoGBALU3MORTfOAHa7LUe4mnZKKsEUHwcIIzWN8H9fEu9CNCK/LVgdfqUcL0L3W2
+   WLA1C2L+d6vxzs8isVKLKBN+eOwUnhbMbMtD8h1SbTUV/JFrZsHycNcff4ythjLW
+   dMo91+t7EcMKDVmej384Saj8D0z2i1QItvBK/msmSQqdYMXxAkEA72IanU3e5EI1
+   rkII0/eVLliK6IM+uhaCgAz7Pt7bxntO2NZ8rscn93v6X7SS2Q/QQKyfsT+AbCXk
+   bMCQE/AsFwJBAOe22JWgT1kIlmPVOaid/XErVV9YYdy7SxkAhvQYzHagWfhQaGpX
+   sMrX1D5i4eIO9JHRu5zPupCGXRWT43UWr7cCQAi61Smja1t7pqWCNvwz7TbRd89e
+   6eyzYXL2BjuWuQEWAhwaRlXBYY2+8bSHy0srLncNVI2MOUy4XQoyQ47WlWUCQGZM
+   vZZhrmZ6ehsdWlVtWyWJoil0FdCkB+XD69D82dhNtysAJPk+Odl0LEpW0a9CNwvh
+   8tiqhY2lJJeQMU3SdEUCQQCxJ5bXPM5iVDBzV50l3DfDN71srr9KGdCahCuxQpRt
+   3ZRkZkz9izeRgRM5GRbOM7xpMWKLXFF0E7Y7jF3aa6xD
+   -----END RSA PRIVATE KEY-----
+   -----BEGIN CERTIFICATE-----
+   MIICITCCAYqgAwIBAgIJAPvk/teL+BzRMA0GCSqGSIb3DQEBBQUAMBYxFDASBgNV
+   BAMTC2V4YW1wbGUuY29tMB4XDTE2MDIyMzAwNTg1M1oXDTE3MDIyMjAwNTg1M1ow
+   FjEUMBIGA1UEAxMLZXhhbXBsZS5jb20wgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJ
+   AoGBANisgEmNjzbaEv3Qpu8bP8V9utRsN8JxJxzUjNSf3k7Uj4BfAFfJpKHQcmFc
+   TO0G8qR8P34qrsGXHwSZF8ajrOJP59nSYTRaFm/zucXC950CmwLBMS3+vdU02xGb
+   AYZJfFOVtiPU4HdB0Z7KX0aTXbtqRJEEF63tjZcJ7M67zT1xAgMBAAGjdzB1MB0G
+   A1UdDgQWBBSSEwsnoHW75GR+74R+9RJDHlMCJTBGBgNVHSMEPzA9gBSSEwsnoHW7
+   5GR+74R+9RJDHlMCJaEapBgwFjEUMBIGA1UEAxMLZXhhbXBsZS5jb22CCQD75P7X
+   i/gc0TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBBQUAA4GBACJdQamPTI/qf6fo
+   ovWrffMKnreULYrYAaL4drzQezUpoZ626/Ur3CwpIKqWDsYSvjwKPl0DUyLEuw5J
+   2QD4X5n/K7/YGGQJSK8fxazsHavyxQhen1uz7X7zWFflIM6+5DvnOtoq3F0yQ84h
+   L6U2LeRpzO4rWw3kxr/jsGkxYaUR
+   -----END CERTIFICATE-----
+   #+END_HTML
+
+   Here is how we extract private key part of the OpenSSL command:
+   #+BEGIN_SRC sh :var pk_and_cert=private_key_and_certificate :results code
+   echo "$pk_and_cert" | sed -e 's/^[ ]*//' | head -15
+   #+END_SRC
+
    #+RESULTS:
    #+NAME: private_key_for_testing
    #+BEGIN_SRC sh
    -----BEGIN RSA PRIVATE KEY-----
-   MIICXgIBAAKBgQDexKjUIXzFV6Cfgt+eQrulNRJkKG6BjboDslLLilyizPNtVs9B
-   yvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuTzJ+z6xUa6obwU6kXM6QJR+kI
-   GApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMSfTIA4SjQZXPv/VbMqwIDAQAB
-   AoGBAJW/j1oiNLSX5jK0EExbwbYZygYoI7jVI+EOQ5ftp74Mleq/O02X982A16U/
-   5Ppb8KpSCvTMLBOjnsIRuK7HhGmouiIW3H9IwZAFJ7yGSSlQ6js104cnDqMKWiu+
-   eig9rMQPKEStQqxGhWVvcZZmvLdlslVehbsVDBeuskdOIPfBAkEA+T2mqhjqQKTx
-   HY19sJyiz1WIJ4eE5BkpQwPi9mbj74XQABU1AY7ZXbVzvHsAYuEOJVMu7oeoah5p
-   uSwZip7NywJBAOTPOQx5+sownE50ZyMQpA1ym15GRuBY6Meto5/xZ5sSeQKosswv
-   TYSg5Q1Dh7c8OiLTIl/IR6fCI1fUrUl6IKECQQDol078N6oLz6EvagYcleAdynz4
-   HrC2SIDICE16koQt11tHaIMBxDQ3DglGoCa5H7sau+j1MmXJOj6BTpU7Vn1HAkAr
-   JwnTWI374/8WrM1mx5SpFJxIw2hKl3oPbqgVWin4DRvVbIuMBr/P66hHQB0waaNt
-   PfSVq+gXs32G6w1jdi0BAkEA8IUP5Nthi4gEQ6VVvcocxITswPSgIXSrWlzrdpBl
-   zWuB3EAOQrHd+1Ks7R887uNs6Yce96COoADys2mkd2eKMg==
+   MIICXQIBAAKBgQDYrIBJjY822hL90KbvGz/FfbrUbDfCcScc1IzUn95O1I+AXwBX
+   yaSh0HJhXEztBvKkfD9+Kq7Blx8EmRfGo6ziT+fZ0mE0WhZv87nFwvedApsCwTEt
+   /r3VNNsRmwGGSXxTlbYj1OB3QdGeyl9Gk127akSRBBet7Y2XCezOu809cQIDAQAB
+   AoGBALU3MORTfOAHa7LUe4mnZKKsEUHwcIIzWN8H9fEu9CNCK/LVgdfqUcL0L3W2
+   WLA1C2L+d6vxzs8isVKLKBN+eOwUnhbMbMtD8h1SbTUV/JFrZsHycNcff4ythjLW
+   dMo91+t7EcMKDVmej384Saj8D0z2i1QItvBK/msmSQqdYMXxAkEA72IanU3e5EI1
+   rkII0/eVLliK6IM+uhaCgAz7Pt7bxntO2NZ8rscn93v6X7SS2Q/QQKyfsT+AbCXk
+   bMCQE/AsFwJBAOe22JWgT1kIlmPVOaid/XErVV9YYdy7SxkAhvQYzHagWfhQaGpX
+   sMrX1D5i4eIO9JHRu5zPupCGXRWT43UWr7cCQAi61Smja1t7pqWCNvwz7TbRd89e
+   6eyzYXL2BjuWuQEWAhwaRlXBYY2+8bSHy0srLncNVI2MOUy4XQoyQ47WlWUCQGZM
+   vZZhrmZ6ehsdWlVtWyWJoil0FdCkB+XD69D82dhNtysAJPk+Odl0LEpW0a9CNwvh
+   8tiqhY2lJJeQMU3SdEUCQQCxJ5bXPM5iVDBzV50l3DfDN71srr9KGdCahCuxQpRt
+   3ZRkZkz9izeRgRM5GRbOM7xpMWKLXFF0E7Y7jF3aa6xD
    -----END RSA PRIVATE KEY-----
    #+END_SRC
 
-   And this is how we generate an =RSA PUBLIC KEY=, which we use to
-   validate JWTs signed with the private key.
+   Here is how we extract the certificate part of the OpenSSL command:
+   #+BEGIN_SRC sh :var pk_and_cert=private_key_and_certificate :results code
+   echo "$pk_and_cert" | sed -e 's/^[ ]*//' | tail -14
+   #+END_SRC
+
+   #+RESULTS:
+   #+NAME: certificate_for_testing
+   #+BEGIN_SRC sh
+   -----BEGIN CERTIFICATE-----
+   MIICITCCAYqgAwIBAgIJAPvk/teL+BzRMA0GCSqGSIb3DQEBBQUAMBYxFDASBgNV
+   BAMTC2V4YW1wbGUuY29tMB4XDTE2MDIyMzAwNTg1M1oXDTE3MDIyMjAwNTg1M1ow
+   FjEUMBIGA1UEAxMLZXhhbXBsZS5jb20wgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJ
+   AoGBANisgEmNjzbaEv3Qpu8bP8V9utRsN8JxJxzUjNSf3k7Uj4BfAFfJpKHQcmFc
+   TO0G8qR8P34qrsGXHwSZF8ajrOJP59nSYTRaFm/zucXC950CmwLBMS3+vdU02xGb
+   AYZJfFOVtiPU4HdB0Z7KX0aTXbtqRJEEF63tjZcJ7M67zT1xAgMBAAGjdzB1MB0G
+   A1UdDgQWBBSSEwsnoHW75GR+74R+9RJDHlMCJTBGBgNVHSMEPzA9gBSSEwsnoHW7
+   5GR+74R+9RJDHlMCJaEapBgwFjEUMBIGA1UEAxMLZXhhbXBsZS5jb22CCQD75P7X
+   i/gc0TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBBQUAA4GBACJdQamPTI/qf6fo
+   ovWrffMKnreULYrYAaL4drzQezUpoZ626/Ur3CwpIKqWDsYSvjwKPl0DUyLEuw5J
+   2QD4X5n/K7/YGGQJSK8fxazsHavyxQhen1uz7X7zWFflIM6+5DvnOtoq3F0yQ84h
+   L6U2LeRpzO4rWw3kxr/jsGkxYaUR
+   -----END CERTIFICATE-----
+   #+END_SRC
+
+   (If you don't need to simulate a JWKs endpoint and you only want to
+   validate and sign JWTs, below is how we generate an =RSA PRIVATE
+   KEY= to sign JWTs)
+   #+BEGIN_SRC sh :results code
+     openssl genrsa 1024
+   #+END_SRC
+
+   No matter which OpenSSL command you use, this is how to extract the
+   =RSA PUBLIC KEY=, which is used to validate JWTs signed with the
+   private key.
 
    Essentially, you =cat= or =echo= the private key into
    =openssl=. However we use the =sed= command below to remove the
    leading whitespace that =org-babel= adds in front of the private key.
-   #+BEGIN_SRC sh :var private_key=private_key_for_testing :results code :exports results
-     echo "$private_key" | sed -e 's/^[ ]*//' | openssl rsa -pubout
+   #+BEGIN_SRC sh :var pk_and_cert=private_key_and_certificate :results code
+   echo "$pk_and_cert" | sed -e 's/^[ ]*//' | head -15 | openssl rsa -pubout
    #+END_SRC
 
-   Here is what a public key should look like:
    #+RESULTS:
    #+NAME: public_key_for_testing
    #+BEGIN_SRC sh
    -----BEGIN PUBLIC KEY-----
-   MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexKjUIXzFV6Cfgt+eQrulNRJk
-   KG6BjboDslLLilyizPNtVs9ByvRVnDXAZBmmny26Remq70l9VXyaCeIHusyGCZuT
-   zJ+z6xUa6obwU6kXM6QJR+kIGApMtuyreRMhxAYyebvgYt7S8NPrpvvFor3K1RMS
-   fTIA4SjQZXPv/VbMqwIDAQAB
+   MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDYrIBJjY822hL90KbvGz/FfbrU
+   bDfCcScc1IzUn95O1I+AXwBXyaSh0HJhXEztBvKkfD9+Kq7Blx8EmRfGo6ziT+fZ
+   0mE0WhZv87nFwvedApsCwTEt/r3VNNsRmwGGSXxTlbYj1OB3QdGeyl9Gk127akSR
+   BBet7Y2XCezOu809cQIDAQAB
    -----END PUBLIC KEY-----
    #+END_SRC
-
 
    #+BEGIN_SRC python :tangle tests/test_flask_app.py :noweb yes :exports none :padline no
      from datetime import datetime
@@ -1260,6 +1451,10 @@
      import unittest
 
      import app as flask_app
+
+     certificate = '''
+     <<certificate_for_testing>>
+     '''
 
      private_key = '''
      <<private_key_for_testing>>
@@ -1283,6 +1478,29 @@
              flask_app.public_key = serialization.load_pem_public_key(
                  public_key,
                  backend=default_backend())
+             x5c_certificate = ''.join(certificate.split("\n")[2:-2])
+             self.oauth2_v1_keys_response = {
+                 'keys': [{
+                     'kid': 'TEST',
+                     'x5c': [x5c_certificate, 'FAKE', 'FAKE']
+                     }]
+                 }
+             for domain in ['example.okta.com',
+                            'example.oktapreview.com',
+                            'invalid.example.com',
+                            'invalid.okta.com']:
+                 responses.add(
+                     responses.GET,
+                     'https://{}/.well-known/openid-configuration'.format(domain),
+                     json.dumps({
+                         'jwks_uri': 'https://{}/oauth2/v1/keys'.format(domain)
+                     }),
+                     status=200)
+                 responses.add(
+                     responses.GET,
+                     'https://{}/oauth2/v1/keys'.format(domain),
+                     json.dumps(self.oauth2_v1_keys_response),
+                     status=200)
 
          def tearDown(self):
              pass
@@ -1320,6 +1538,8 @@
          <<test_parse_jwt_invalid_audience>>
 
          <<test_parse_jwt_invalid_issuer>>
+
+         <<test_fetch_public_key_for_when_empty>>
 
          <<test_login_with_password>>
    #+END_SRC

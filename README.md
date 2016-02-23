@@ -473,6 +473,7 @@ which means that it will return an error unless the value
 Here is how we parse a JWT in this sample application:
 
     def parse_jwt(id_token):
+        public_key = fetch_jwt_public_key_for(id_token)
         rv = jwt.decode(
             id_token,
             public_key,
@@ -483,6 +484,7 @@ Here is how we parse a JWT in this sample application:
 
 Here is base test that we use for the `parse_jwt` function:
 
+    @responses.activate
     def test_parse_jwt_valid(self):
         id_token = self.create_jwt({})
         rv = flask_app.parse_jwt(id_token)
@@ -510,9 +512,16 @@ setting in `parse_jwt`:
     And this is how we test that the JWT decoder is properly
     validating the `issuer`:
     
+        @responses.activate
         @raises(jwt.InvalidIssuerError)
         def test_parse_jwt_invalid_issuer(self):
-            id_token = self.create_jwt({'iss': 'INVALID'})
+            id_token = self.create_jwt({'iss': 'https://invalid.okta.com'})
+            flask_app.parse_jwt(id_token)
+        
+        @responses.activate
+        @raises(ValueError)
+        def test_parse_jwt_invalid_issuer_domain(self):
+            id_token = self.create_jwt({'iss': 'https://invalid.example.com'})
             flask_app.parse_jwt(id_token)
 
 3.  The OIDC Audience
@@ -525,6 +534,7 @@ setting in `parse_jwt`:
     And this is how we test that the JWT decoder is properly
     validating the `audience`:
     
+        @responses.activate
         @raises(jwt.InvalidAudienceError)
         def test_parse_jwt_invalid_audience(self):
             id_token = self.create_jwt({'aud': 'INVALID'})
@@ -562,23 +572,144 @@ the `x5c` key, then pipe that to `openssl` to extract the public key.
     dQIDAQAB
     -----END PUBLIC KEY-----
 
-Since this example uses Python, below is how to fetch public keys
-from Okta using Python.
+### Fetching public keys for OIDC in Python
 
-    def fetch_jwt_public_key(base_url=None):
-        if base_url is None:
-            raise Exception('base_url required')
-        jwks_url = "{}/oauth2/v1/keys".format(base_url)
-        r = requests.get(jwks_url)
-        jwks = r.json()
-        x5c = jwks['keys'][0]['x5c'][0]
-        pem_data = base64.b64decode(str(x5c))
-        cert = x509.load_der_x509_certificate(pem_data, default_backend())
-        return cert.public_key()
+Since this example uses Python, below is an example of how to
+autodiscover the JWKS URL for an Okta OIDC endpoint by appending
+the `/.well-known/openid-configuration`  string to the end of the
+URL that is in the `iss` OIDC claim.
 
-**Note:** The code above pulls from the URI directly. It should really be
-discovering that URI from the `.well-known/openid-configuration` URL endpoint that is
-used for discovery.
+Below is some Python code that demonstrates how to automatically
+discover the JWKS URL and parse the public keys from that URL in.
+
+This is what it does:
+
+1.  Takes the URL from the  `iss` in the `id_token` and appends
+    `/.well-known/openid-configuration` to the end of the the URL.
+2.  Fetches the combined URL and takes the `jwks_uri` key from the results.
+3.  Fetches the `jwks_uri` and, for each key in the result, it does
+    the following:
+    -   Takes the first element in the `x5c` value
+    -   Base64 decodes the DER encoded x509 certificate
+    -   Parses the DER encoded x509 certificate using the Python
+        `cryptography` library.
+    -   Stores the public key in a hash, using the "Key ID" as the value.
+
+    oidc_discovery_url = "{}/.well-known/openid-configuration".format(
+        cleaned_issuer)
+    r = requests.get(oidc_discovery_url)
+    openid_configuration = r.json()
+    jwks_uri = openid_configuration['jwks_uri']
+    r = requests.get(jwks_uri)
+    jwks = r.json()
+    for key in jwks['keys']:
+        if 'kid' in dirty_id_token:
+            jwk_id = key['kid']
+        else:
+            jwk_id = cleaned_key_id
+        first_element = 0
+        jwk_x5c = key['x5c'][first_element]
+        der_data = base64.b64decode(str(jwk_x5c))
+        cert = x509.load_der_x509_certificate(der_data, default_backend())
+        public_keys[jwk_id] = cert.public_key()
+
+Below is a quote from the ["x5c" section in the JSON Web Key specification](https://tools.ietf.org/html/draft-ietf-jose-json-web-key-31#section-4.7):
+
+> The "x5c" (X.509 Certificate Chain) member contains a chain of one
+> or more PKIX certificates [RFC5280].  The certificate chain is
+> represented as a JSON array of certificate value strings.  Each
+> string in the array is a base64 encoded ([RFC4648] Section 4 &#x2013;
+> not base64url encoded) DER [ITU.X690.1994] PKIX certificate value.
+> The PKIX certificate containing the key value MUST be the first
+> certificate.  This MAY be followed by additional certificates,
+> with each subsequent certificate being the one used to certify the
+> previous one.  The key in the first certificate MUST match the
+> public key represented by other members of the JWK.  Use of this
+> member is OPTIONAL.
+> 
+> As with the "x5u" member, members other than those representing
+> the public key may also be populated when an "x5c" member is
+> present.  If other members are present, the contents of those
+> members MUST be semantically consistent with the related fields in
+> the first certificate.  See the last paragraph of Section 4.6 for
+> additional guidance on this.
+
+When extracting the `iss` and `kid` claims from the `id_token` we
+strongly urge you to treat those values as untrusted and validate
+the contents of those claims before using them.
+
+Here is what we do in our example code:
+
+1.  Parse the URL in the `iss` claim and check that the domain
+    matches "okta.com" or "oktapreview.com".
+2.  Remove all non-alphanumeric characters from the `kid` claim.
+
+    dirty_id_token = jwt.decode(id_token, verify=False)
+    dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+    if domain_name_for(dirty_url) not in allowed_domains:
+        raise ValueError('The domain in the issuer claim is not allowed')
+    cleaned_issuer = dirty_url.geturl()
+    if 'kid' in dirty_id_token:
+        cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
+    else:
+        cleaned_key_id = cleaned_issuer
+
+For reference, here is the Python function that converts a URL
+like "<https://example.okta.com>" into a string with just the
+"second level domain" and the "top level domain", like this: "okta.com"
+
+    def domain_name_for(url):
+        second_to_last_element = -2
+        domain_parts = url.netloc.split('.')
+        (sld, tld) = domain_parts[second_to_last_element:]
+        return sld + '.' + tld
+
+Finally, here is what the function looks like when it's all put
+together, with additional error handling code:
+
+    def fetch_jwt_public_key_for(id_token=None):
+        if id_token is None:
+            raise NameError('id_token is required')
+    
+        dirty_id_token = jwt.decode(id_token, verify=False)
+        dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+        if domain_name_for(dirty_url) not in allowed_domains:
+            raise ValueError('The domain in the issuer claim is not allowed')
+        cleaned_issuer = dirty_url.geturl()
+        if 'kid' in dirty_id_token:
+            cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
+        else:
+            cleaned_key_id = cleaned_issuer
+    
+        if cleaned_key_id in public_keys:
+            return public_keys[cleaned_key_id]
+        else:
+            oidc_discovery_url = "{}/.well-known/openid-configuration".format(
+                cleaned_issuer)
+            r = requests.get(oidc_discovery_url)
+            openid_configuration = r.json()
+            jwks_uri = openid_configuration['jwks_uri']
+            r = requests.get(jwks_uri)
+            jwks = r.json()
+            for key in jwks['keys']:
+                if 'kid' in dirty_id_token:
+                    jwk_id = key['kid']
+                else:
+                    jwk_id = cleaned_key_id
+                first_element = 0
+                jwk_x5c = key['x5c'][first_element]
+                der_data = base64.b64decode(str(jwk_x5c))
+                cert = x509.load_der_x509_certificate(der_data, default_backend())
+                public_keys[jwk_id] = cert.public_key()
+    
+        if cleaned_key_id in public_keys:
+            return public_keys[cleaned_key_id]
+        else:
+            raise RuntimeError("Unable to fetch public key from jwks_uri")
+
+    @raises(NameError)
+    def test_fetch_public_key_for_when_empty(self):
+        flask_app.fetch_jwt_public_key_for()
 
 ## Single Page App
 
