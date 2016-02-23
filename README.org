@@ -473,7 +473,7 @@
     Here is how we parse a JWT in this sample application:
 
     #+NAME: parse-jwt
-    #+BEGIN_SRC python :noweb yes
+    #+BEGIN_SRC python :noweb yes :padline no
       def parse_jwt(id_token):
           public_key = fetch_jwt_public_key_for(id_token)
           rv = jwt.decode(
@@ -488,10 +488,10 @@
     Here is base test that we use for the =parse_jwt= function:
 
     #+NAME: test_parse_jwt_valid
-    #+BEGIN_SRC python
+    #+BEGIN_SRC python :padline no
       @responses.activate
       def test_parse_jwt_valid(self):
-          id_token = self.create_jwt({})
+          id_token = self.create_jwt(claims={})
           rv = flask_app.parse_jwt(id_token)
           self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
     #+END_SRC
@@ -523,20 +523,20 @@
        validating the =issuer=:
 
        #+NAME: test_parse_jwt_invalid_issuer
-       #+BEGIN_SRC python
+       #+BEGIN_SRC python :padline no
          @responses.activate
          @raises(jwt.InvalidIssuerError)
          def test_parse_jwt_invalid_issuer(self):
-             id_token = self.create_jwt({'iss': 'https://invalid.okta.com'})
+             id_token = self.create_jwt(claims={'iss': 'https://invalid.okta.com'})
              flask_app.parse_jwt(id_token)
 
          @responses.activate
          @raises(ValueError)
          def test_parse_jwt_invalid_issuer_domain(self):
-             id_token = self.create_jwt({'iss': 'https://invalid.example.com'})
+             id_token = self.create_jwt(
+                 claims={'iss': 'https://invalid.example.com'},
+                 kid='EXAMPLEKID')
              flask_app.parse_jwt(id_token)
-
-
        #+END_SRC
 
     3. The OIDC Audience
@@ -552,11 +552,11 @@
        validating the =audience=:
 
        #+NAME: test_parse_jwt_invalid_audience
-       #+BEGIN_SRC python 
+       #+BEGIN_SRC python :padline no
          @responses.activate
          @raises(jwt.InvalidAudienceError)
          def test_parse_jwt_invalid_audience(self):
-             id_token = self.create_jwt({'aud': 'INVALID'})
+             id_token = self.create_jwt(claims={'aud': 'INVALID'})
              flask_app.parse_jwt(id_token)
        #+END_SRC
 
@@ -613,22 +613,53 @@
     discover the JWKS URL and parse the public keys from that URL in.
 
     This is what it does:
-    1. Takes the URL from the  =iss= in the =id_token= and appends
-      =/.well-known/openid-configuration= to the end of the the URL.
-    2. Fetches the combined URL and takes the =jwks_uri= key from the results.
-    3. Fetches the =jwks_uri= and, for each key in the result, it does
+    1. Checks the =id_token= header for a =kid= ("Key ID"). Fail validation
+       if the =id_token= doesn't have a =kid=.
+    2. Use the =kid= to see if we have already fetched a public key for that =kid=.
+       If we already have a public key, then use that to validate the
+       =id_token=.
+
+    Here an example in Python that checks to see if the =id_token= has
+    a =kid=, and if so, checks if we've seen the public key for that
+    =kid= before:
+    #+NAME: lookup_public_key_by_key_id
+    #+BEGIN_SRC python :padline no
+      dirty_header = jws.get_unverified_header(id_token)
+      cleaned_key_id = None
+      if 'kid' in dirty_header:
+          dirty_key_id = dirty_header['kid']
+          cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_key_id)
+      else:
+          raise ValueError('The id_token header must contain a "kid"')
+      if cleaned_key_id in public_keys:
+          return public_keys[cleaned_key_id]
+    #+END_SRC
+    
+
+    If we haven't yet seen a public key matching the =kid=, then we
+    fetch the public key as follows:
+
+    1. Take the URL from the =iss= claim in the =id_token= and append
+       =/.well-known/openid-configuration= to the end of that URL.
+    2. Fetch the URL above and take the =jwks_uri= key from the results.
+    3. Fetch the =jwks_uri= and, for each key in the result, it do
        the following:
-       - Takes the first element in the =x5c= value
-       - Base64 decodes the DER encoded x509 certificate
-       - Parses the DER encoded x509 certificate using the Python
+       - Take the first element in the =x5c= value.
+       - Base64 decode the DER encoded x509 certificate.
+       - Parse the DER encoded x509 certificate using the Python
          =cryptography= library.
-       - Stores the public key in a hash, using the "Key ID" as the
+       - Store the public key in a hash, using the =kid= as the
          value.
 
     Here an example in Python that does what is described above:
 
-    #+NAME: autodiscover_jwks_and_load_public_keys
-    #+BEGIN_SRC python
+    #+NAME: fetch_public_key_via_jwks
+    #+BEGIN_SRC python :padline no
+      dirty_id_token = jwt.decode(id_token, verify=False)
+      dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+      if domain_name_for(dirty_url) not in allowed_domains:
+          raise ValueError('The domain in the issuer claim is not allowed')
+      cleaned_issuer = dirty_url.geturl()
       oidc_discovery_url = "{}/.well-known/openid-configuration".format(
           cleaned_issuer)
       r = requests.get(oidc_discovery_url)
@@ -637,10 +668,7 @@
       r = requests.get(jwks_uri)
       jwks = r.json()
       for key in jwks['keys']:
-          if 'kid' in dirty_id_token:
-              jwk_id = key['kid']
-          else:
-              jwk_id = cleaned_key_id
+          jwk_id = key['kid']
           first_element = 0
           jwk_x5c = key['x5c'][first_element]
           der_data = base64.b64decode(str(jwk_x5c))
@@ -648,7 +676,27 @@
           public_keys[jwk_id] = cert.public_key()
     #+END_SRC
 
-    Below is a quote from the [[https://tools.ietf.org/html/draft-ietf-jose-json-web-key-31#section-4.7]["x5c" section in the JSON Web Key specification]]:
+
+    When extracting the =iss= claim from the =id_token= we strongly
+    urge you to treat that value as untrusted and validate the
+    contents before using it. 
+
+    In the example above, we parse the URL in the =iss= claim and
+    check that the domain matches "okta.com" or
+    "oktapreview.com". This is done using the =domain_name_for=
+    function below:
+
+    #+NAME: domain_name_for
+    #+BEGIN_SRC python :padline no
+      def domain_name_for(url):
+          second_to_last_element = -2
+          domain_parts = url.netloc.split('.')
+          (sld, tld) = domain_parts[second_to_last_element:]
+          return sld + '.' + tld
+    #+END_SRC
+
+    For more details on the =x5c= format, see the [[https://tools.ietf.org/html/draft-ietf-jose-json-web-key-31#section-4.7]["x5c" section in the
+    JSON Web Key specification]], which is quoted below:
     
     #+BEGIN_QUOTE
     The "x5c" (X.509 Certificate Chain) member contains a chain of one
@@ -671,58 +719,18 @@
     additional guidance on this.
     #+END_QUOTE
 
-    When extracting the =iss= and =kid= claims from the =id_token= we
-    strongly urge you to treat those values as untrusted and validate
-    the contents of those claims before using them.
-    
-    Here is what we do in our example code:
-    1. Parse the URL in the =iss= claim and check that the domain
-       matches "okta.com" or "oktapreview.com".
-    2. Remove all non-alphanumeric characters from the =kid= claim.
-
-    Here an example in Python that does what is described above:
-
-    #+NAME: clean_inputs_from_id_token
-    #+BEGIN_SRC python
-      dirty_id_token = jwt.decode(id_token, verify=False)
-      dirty_url = urlparse.urlparse(dirty_id_token['iss'])
-      if domain_name_for(dirty_url) not in allowed_domains:
-          raise ValueError('The domain in the issuer claim is not allowed')
-      cleaned_issuer = dirty_url.geturl()
-      if 'kid' in dirty_id_token:
-          cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
-      else:
-          cleaned_key_id = cleaned_issuer
-    #+END_SRC
-
-    For reference, here is the Python function that converts a URL
-    like "https://example.okta.com" into a string with just the
-    "second level domain" and the "top level domain", like this: "okta.com"
-    #+NAME: domain_name_for
-    #+BEGIN_SRC python
-      def domain_name_for(url):
-          second_to_last_element = -2
-          domain_parts = url.netloc.split('.')
-          (sld, tld) = domain_parts[second_to_last_element:]
-          return sld + '.' + tld
-    #+END_SRC
-
-
     Finally, here is what the function looks like when it's all put
     together, with additional error handling code:
 
     #+NAME: fetch-jwt-public-key-for
-    #+BEGIN_SRC python :noweb yes
+    #+BEGIN_SRC python :noweb yes :padline no
       def fetch_jwt_public_key_for(id_token=None):
           if id_token is None:
               raise NameError('id_token is required')
 
-          <<clean_inputs_from_id_token>>
+          <<lookup_public_key_by_key_id>>
 
-          if cleaned_key_id in public_keys:
-              return public_keys[cleaned_key_id]
-          else:
-              <<autodiscover_jwks_and_load_public_keys>>
+          <<fetch_public_key_via_jwks>>
 
           if cleaned_key_id in public_keys:
               return public_keys[cleaned_key_id]
@@ -735,6 +743,24 @@
       @raises(NameError)
       def test_fetch_public_key_for_when_empty(self):
           flask_app.fetch_jwt_public_key_for()
+    #+END_SRC
+
+    #+NAME: test_parse_jwt_invalid_kid
+    #+BEGIN_SRC python :padline no
+      @responses.activate
+      @raises(RuntimeError)
+      def test_parse_jwt_invalid_kid(self):
+          id_token = self.create_jwt(claims={}, kid='INVALIDKID')
+          flask_app.parse_jwt(id_token)
+    #+END_SRC
+
+    #+NAME: test_parse_jwt_no_kid
+    #+BEGIN_SRC python :padline no
+      @responses.activate
+      @raises(ValueError)
+      def test_parse_jwt_no_kid(self):
+          id_token = self.create_jwt(claims={}, kid=None)
+          flask_app.parse_jwt(id_token)
     #+END_SRC
 
 ** Single Page App
@@ -1138,7 +1164,7 @@
 
       @responses.activate
       def test_sso_via_id_token_invalid(self):
-          id_token = self.create_jwt({'aud': 'invalid'})
+          id_token = self.create_jwt(claims={'aud': 'invalid'})
           print id_token
           rv = self.app.post('/sso/oidc', data={'id_token': id_token})
           self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
@@ -1179,9 +1205,11 @@
     from flask.ext.login import login_required
     from flask.ext.login import login_user
     from flask.ext.login import logout_user
+    from jwt.api_jws import PyJWS
     import flask
     import jwt
     import requests
+
   #+END_SRC
 *** Setup Flask-Login
     https://flask-login.readthedocs.org/en/latest/
@@ -1236,6 +1264,7 @@
   #+NAME: flask-app
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
+    jws = PyJWS()
 
     not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
@@ -1280,7 +1309,9 @@
 
     <<setup-flask-login-manager>>
 
+
     <<domain_name_for>>
+
 
     <<fetch-jwt-public-key-for>>
 
@@ -1443,6 +1474,44 @@
    -----END PUBLIC KEY-----
    #+END_SRC
 
+
+   The code for getting the =iat= ("Issued AT") time comes from the
+   StackOverflow post: "[[http://stackoverflow.com/a/16755432/3191847][What is the easiest way to get current GMT time
+   in Unix timestamp format?]]"
+
+   #+NAME: create_jwt_for_testing
+   #+BEGIN_SRC python
+     def create_jwt(self, claims={}, kid='TESTKID'):
+         d = datetime.utcnow()
+         iat = int(calendar.timegm(d.utctimetuple()))
+         exp = iat + 3600
+         defaults = {
+             "sub": "00u0abcdefGHIJKLMNOP",
+             "ver": 1,
+             "iss": "https://example.okta.com",
+             "login": "username@example.com",
+             "aud": self.okta['client_id'],
+             "iat": iat,
+             "exp": exp,
+             "amr": [
+                 "pwd"
+             ],
+             "idp": "00o0abcde1FGHIJKLMNO",
+             "jti": "abcD0eFgHIJKLmnOPQ1r",
+             "auth_time": iat
+         }
+         for key in claims.keys():
+             defaults[key] = claims[key]
+         headers = {}
+         if kid:
+             headers['kid'] = kid
+         return jwt.encode(
+             defaults,
+             private_key,
+             algorithm='RS256',
+             headers=headers)
+   #+END_SRC
+
    #+BEGIN_SRC python :tangle tests/test_flask_app.py :noweb yes :exports none :padline no
      from datetime import datetime
      import calendar
@@ -1473,20 +1542,18 @@
      class TestFlaskApp(unittest.TestCase):
 
          def setUp(self):
-             self.app = flask_app.app.test_client()
              self.okta = {
                  'base_url': 'https://example.okta.com',
                  'api_token': '01A2bCd3efGh-ij-4K-Lmn5OPqrSTuvwXYZaBCD6EF',
                  'client_id': 'a0bcdEfGhIJkLmNOPQr1',
                  }
              flask_app.okta = self.okta
-             flask_app.public_key = serialization.load_pem_public_key(
-                 public_key,
-                 backend=default_backend())
+             flask_app.app.config['SECRET_KEY'] = "TESTING"
+             self.app = flask_app.app.test_client()
              x5c_certificate = ''.join(certificate.split("\n")[2:-2])
              self.oauth2_v1_keys_response = {
                  'keys': [{
-                     'kid': 'TEST',
+                     'kid': 'TESTKID',
                      'x5c': [x5c_certificate, 'FAKE', 'FAKE']
                      }]
                  }
@@ -1510,29 +1577,7 @@
          def tearDown(self):
              pass
 
-         def create_jwt(self, claim={}):
-             # http://stackoverflow.com/a/16755432/3191847
-             d = datetime.utcnow()
-             iat = int(calendar.timegm(d.utctimetuple()))
-             exp = iat + 3600
-             defaults = {
-                 "sub": "00u0abcdefGHIJKLMNOP",
-                 "ver": 1,
-                 "iss": "https://example.okta.com",
-                 "login": "username@example.com",
-                 "aud": self.okta['client_id'],
-                 "iat": iat,
-                 "exp": exp,
-                 "amr": [
-                     "pwd"
-                 ],
-                 "idp": "00o0abcde1FGHIJKLMNO",
-                 "jti": "abcD0eFgHIJKLmnOPQ1r",
-                 "auth_time": iat
-             }
-             for key in claim.keys():
-                 defaults[key] = claim[key]
-             return jwt.encode(defaults, private_key, algorithm='RS256')
+         <<create_jwt_for_testing>>
 
          <<test_has_default_route>>
 
@@ -1545,6 +1590,10 @@
          <<test_parse_jwt_invalid_issuer>>
 
          <<test_fetch_public_key_for_when_empty>>
+
+         <<test_parse_jwt_invalid_kid>>
+
+         <<test_parse_jwt_no_kid>>
 
          <<test_login_with_password>>
    #+END_SRC

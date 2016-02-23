@@ -59,20 +59,18 @@ BBet7Y2XCezOu809cQIDAQAB
 class TestFlaskApp(unittest.TestCase):
 
     def setUp(self):
-        self.app = flask_app.app.test_client()
         self.okta = {
             'base_url': 'https://example.okta.com',
             'api_token': '01A2bCd3efGh-ij-4K-Lmn5OPqrSTuvwXYZaBCD6EF',
             'client_id': 'a0bcdEfGhIJkLmNOPQr1',
             }
         flask_app.okta = self.okta
-        flask_app.public_key = serialization.load_pem_public_key(
-            public_key,
-            backend=default_backend())
+        flask_app.app.config['SECRET_KEY'] = "TESTING"
+        self.app = flask_app.app.test_client()
         x5c_certificate = ''.join(certificate.split("\n")[2:-2])
         self.oauth2_v1_keys_response = {
             'keys': [{
-                'kid': 'TEST',
+                'kid': 'TESTKID',
                 'x5c': [x5c_certificate, 'FAKE', 'FAKE']
                 }]
             }
@@ -96,8 +94,7 @@ class TestFlaskApp(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def create_jwt(self, claim={}):
-        # http://stackoverflow.com/a/16755432/3191847
+    def create_jwt(self, claims={}, kid='TESTKID'):
         d = datetime.utcnow()
         iat = int(calendar.timegm(d.utctimetuple()))
         exp = iat + 3600
@@ -116,9 +113,16 @@ class TestFlaskApp(unittest.TestCase):
             "jti": "abcD0eFgHIJKLmnOPQ1r",
             "auth_time": iat
         }
-        for key in claim.keys():
-            defaults[key] = claim[key]
-        return jwt.encode(defaults, private_key, algorithm='RS256')
+        for key in claims.keys():
+            defaults[key] = claims[key]
+        headers = {}
+        if kid:
+            headers['kid'] = kid
+        return jwt.encode(
+            defaults,
+            private_key,
+            algorithm='RS256',
+            headers=headers)
 
     def test_has_default_route(self):
         path = "/"
@@ -137,40 +141,52 @@ class TestFlaskApp(unittest.TestCase):
     
     @responses.activate
     def test_sso_via_id_token_invalid(self):
-        id_token = self.create_jwt({'aud': 'invalid'})
+        id_token = self.create_jwt(claims={'aud': 'invalid'})
         print id_token
         rv = self.app.post('/sso/oidc', data={'id_token': id_token})
         self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
 
     @responses.activate
     def test_parse_jwt_valid(self):
-        id_token = self.create_jwt({})
+        id_token = self.create_jwt(claims={})
         rv = flask_app.parse_jwt(id_token)
         self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
 
     @responses.activate
     @raises(jwt.InvalidAudienceError)
     def test_parse_jwt_invalid_audience(self):
-        id_token = self.create_jwt({'aud': 'INVALID'})
+        id_token = self.create_jwt(claims={'aud': 'INVALID'})
         flask_app.parse_jwt(id_token)
 
     @responses.activate
     @raises(jwt.InvalidIssuerError)
     def test_parse_jwt_invalid_issuer(self):
-        id_token = self.create_jwt({'iss': 'https://invalid.okta.com'})
+        id_token = self.create_jwt(claims={'iss': 'https://invalid.okta.com'})
         flask_app.parse_jwt(id_token)
     
     @responses.activate
     @raises(ValueError)
     def test_parse_jwt_invalid_issuer_domain(self):
-        id_token = self.create_jwt({'iss': 'https://invalid.example.com'})
+        id_token = self.create_jwt(
+            claims={'iss': 'https://invalid.example.com'},
+            kid='EXAMPLEKID')
         flask_app.parse_jwt(id_token)
-    
-    
 
     @raises(NameError)
     def test_fetch_public_key_for_when_empty(self):
         flask_app.fetch_jwt_public_key_for()
+
+    @responses.activate
+    @raises(RuntimeError)
+    def test_parse_jwt_invalid_kid(self):
+        id_token = self.create_jwt(claims={}, kid='INVALIDKID')
+        flask_app.parse_jwt(id_token)
+
+    @responses.activate
+    @raises(ValueError)
+    def test_parse_jwt_no_kid(self):
+        id_token = self.create_jwt(claims={}, kid=None)
+        flask_app.parse_jwt(id_token)
 
     @responses.activate
     def test_login_with_password(self):

@@ -17,9 +17,13 @@ from flask.ext.login import current_user
 from flask.ext.login import login_required
 from flask.ext.login import login_user
 from flask.ext.login import logout_user
+from jwt.api_jws import PyJWS
 import flask
 import jwt
 import requests
+
+
+jws = PyJWS()
 
 not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
@@ -94,46 +98,47 @@ def load_user(user_id):
     # print "Loading user: " + user_id
     return UserSession(user_id)
 
+
 def domain_name_for(url):
     second_to_last_element = -2
     domain_parts = url.netloc.split('.')
     (sld, tld) = domain_parts[second_to_last_element:]
     return sld + '.' + tld
 
+
 def fetch_jwt_public_key_for(id_token=None):
     if id_token is None:
         raise NameError('id_token is required')
+
+    dirty_header = jws.get_unverified_header(id_token)
+    cleaned_key_id = None
+    if 'kid' in dirty_header:
+        dirty_key_id = dirty_header['kid']
+        cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_key_id)
+    else:
+        raise ValueError('The id_token header must contain a "kid"')
+    if cleaned_key_id in public_keys:
+        return public_keys[cleaned_key_id]
 
     dirty_id_token = jwt.decode(id_token, verify=False)
     dirty_url = urlparse.urlparse(dirty_id_token['iss'])
     if domain_name_for(dirty_url) not in allowed_domains:
         raise ValueError('The domain in the issuer claim is not allowed')
     cleaned_issuer = dirty_url.geturl()
-    if 'kid' in dirty_id_token:
-        cleaned_key_id = re.sub(not_alpha_numeric, '', dirty_id_token['kid'])
-    else:
-        cleaned_key_id = cleaned_issuer
-
-    if cleaned_key_id in public_keys:
-        return public_keys[cleaned_key_id]
-    else:
-        oidc_discovery_url = "{}/.well-known/openid-configuration".format(
-            cleaned_issuer)
-        r = requests.get(oidc_discovery_url)
-        openid_configuration = r.json()
-        jwks_uri = openid_configuration['jwks_uri']
-        r = requests.get(jwks_uri)
-        jwks = r.json()
-        for key in jwks['keys']:
-            if 'kid' in dirty_id_token:
-                jwk_id = key['kid']
-            else:
-                jwk_id = cleaned_key_id
-            first_element = 0
-            jwk_x5c = key['x5c'][first_element]
-            der_data = base64.b64decode(str(jwk_x5c))
-            cert = x509.load_der_x509_certificate(der_data, default_backend())
-            public_keys[jwk_id] = cert.public_key()
+    oidc_discovery_url = "{}/.well-known/openid-configuration".format(
+        cleaned_issuer)
+    r = requests.get(oidc_discovery_url)
+    openid_configuration = r.json()
+    jwks_uri = openid_configuration['jwks_uri']
+    r = requests.get(jwks_uri)
+    jwks = r.json()
+    for key in jwks['keys']:
+        jwk_id = key['kid']
+        first_element = 0
+        jwk_x5c = key['x5c'][first_element]
+        der_data = base64.b64decode(str(jwk_x5c))
+        cert = x509.load_der_x509_certificate(der_data, default_backend())
+        public_keys[jwk_id] = cert.public_key()
 
     if cleaned_key_id in public_keys:
         return public_keys[cleaned_key_id]
