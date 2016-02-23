@@ -593,7 +593,10 @@ This is what it does:
     -   Base64 decodes the DER encoded x509 certificate
     -   Parses the DER encoded x509 certificate using the Python
         `cryptography` library.
-    -   Stores the public key in a hash, using the "Key ID" as the value.
+    -   Stores the public key in a hash, using the "Key ID" as the
+        value.
+
+Here an example in Python that does what is described above:
 
     oidc_discovery_url = "{}/.well-known/openid-configuration".format(
         cleaned_issuer)
@@ -643,6 +646,8 @@ Here is what we do in our example code:
 1.  Parse the URL in the `iss` claim and check that the domain
     matches "okta.com" or "oktapreview.com".
 2.  Remove all non-alphanumeric characters from the `kid` claim.
+
+Here an example in Python that does what is described above:
 
     dirty_id_token = jwt.decode(id_token, verify=False)
     dirty_url = urlparse.urlparse(dirty_id_token['iss'])
