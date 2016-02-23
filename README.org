@@ -738,15 +738,15 @@
               raise RuntimeError("Unable to fetch public key from jwks_uri")
     #+END_SRC
 
-    #+NAME: test_fetch_public_key_for_when_empty :exports none
-    #+BEGIN_SRC python
+    #+NAME: test_fetch_public_key_for_when_empty
+    #+BEGIN_SRC python :exports none
       @raises(NameError)
       def test_fetch_public_key_for_when_empty(self):
           flask_app.fetch_jwt_public_key_for()
     #+END_SRC
 
     #+NAME: test_parse_jwt_invalid_kid
-    #+BEGIN_SRC python :padline no
+    #+BEGIN_SRC python :padline no :exports none
       @responses.activate
       @raises(RuntimeError)
       def test_parse_jwt_invalid_kid(self):
@@ -755,7 +755,7 @@
     #+END_SRC
 
     #+NAME: test_parse_jwt_no_kid
-    #+BEGIN_SRC python :padline no
+    #+BEGIN_SRC python :padline no :exports none
       @responses.activate
       @raises(ValueError)
       def test_parse_jwt_no_kid(self):

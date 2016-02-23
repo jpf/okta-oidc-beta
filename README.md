@@ -722,22 +722,6 @@ together, with additional error handling code:
         else:
             raise RuntimeError("Unable to fetch public key from jwks_uri")
 
-    @raises(NameError)
-    def test_fetch_public_key_for_when_empty(self):
-        flask_app.fetch_jwt_public_key_for()
-
-    @responses.activate
-    @raises(RuntimeError)
-    def test_parse_jwt_invalid_kid(self):
-        id_token = self.create_jwt(claims={}, kid='INVALIDKID')
-        flask_app.parse_jwt(id_token)
-
-    @responses.activate
-    @raises(ValueError)
-    def test_parse_jwt_no_kid(self):
-        id_token = self.create_jwt(claims={}, kid=None)
-        flask_app.parse_jwt(id_token)
-
 ## Single Page App
 
 This use case demonstrates how to have a Single Page application
