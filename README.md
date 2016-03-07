@@ -44,59 +44,26 @@ If you do not have an API token, follow our guide for
 ### Okta OAuth Client ID
 
 
-At the moment, the only way to register an OAuth client with Okta
-is via Okta's `/oauth2/` API endpoint.
+The easiest way to register an OAuth client is by creating a new
+application integration from the Okta Admin interface:
 
-The recommended method of doing this is via [Postman](http://developer.okta.com/docs/api/getting_started/api_test_client.html), using this
-Postman Collection for Okta's [Client Registration API endpoint](https://beta.getpostman.com/collections/2bece1641e75a7d4a222).
-
-Use the "Create OAuth Client" template in Postman, replacing data in the
-sections as appropriate for your situation. The most important
-value to change in the example JSON payload is the array value for the
-`redirect_uris` key. 
-
-It is important that the `redirect_uris` array contains the URL
-for the site that will be making requests against Okta. If you're
-using the instructions below, this URL will look like
-"`https://abc123de4.ngrok.io`" or
-"`https://example.herokuapp.com`".
-
-Don't worry if you don't yet know the URL that you'll be using
-here, you can always update the value of `redirect_uris` using an
-HTTP PUT.
-
-It isn't required, but we suggest that
-you also change the values for the `client_name`, `client_uri`, `logo_uri`, and `jwks_uri` keys.
-
-Here is an example HTTP request to create an Okta OAuth client via
-the `/oauth2/` API endpoint:
-
-    POST /oauth2/v1/clients HTTP/1.1
-    Host: example.okta.com
-    Accept: application/json
-    Content-Type: application/json
-    Authorization: SSWS 01A2bcDefGhI34JKlmnOp5qRstUVWXy6ZABCdefgHi
-    
-    {
-        "client_name": "Example Okta OAuth Client",
-        "client_uri": "https://example.com",
-        "logo_uri": "https://static.example.com/logo.png",
-        "redirect_uris": [
-             "https://example.com/oauth/callback1",
-             "https://example.com/oauth/callback2"
-        ],
-        "response_types": [
-             "code",
-             "token",
-             "id_token"
-        ],
-        "grant_types": [
-             "authorization_code",
-             "implicit"
-        ],
-        "token_endpoint_auth_method": "private_key_jwt",
-        "jwks_uri": "https://static.example.com/certs/public.jwks"
-    }
+1.  Log in to your Okta org as an administrator.
+2.  After logging in, click on the "Admin" button.
+3.  From the "Shortcuts" on the right hand side of the screen,
+    click "Add Applications"
+4.  Click the "Create New App" button, which is on the left hand
+    side of the screen.
+5.  Select "OpenID Connect" from the list of application
+    integration types.
+6.  **Important:** Select "Browser" as your "App Type"
+7.  Configure one or more "Redirect URIs" for your application.
+8.  Click "Finish"
+9.  Using the "People" or "Groups" tabs, assign people to your
+    newly created application. 
+    **Note:** Users will not be able to authenticate to your
+    application if they are not assigned!
+10. Find your "Client ID" in the "Client Credentials" section of
+    the "Groups" tab. Use this Client ID in your demo application.
 
 ### Python
 
