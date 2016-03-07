@@ -429,6 +429,10 @@ Here is how this is done in the example application:
         r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
         result = r.json()
     
+        if 'errorCode' in result:
+            flash(result['errorSummary'])
+            return redirect(url_for('main_page', _external=True, _scheme='https'))
+    
         redirect_uri = url_for(
             'sso_oidc',
             _external=True,
