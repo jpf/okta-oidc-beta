@@ -42,6 +42,16 @@
                           </div>
                         </div>
                       </div>
+		      {% with messages = get_flashed_messages() %}
+		      {% if messages %}
+		      {% for error in messages %}
+		      <div class="alert alert-danger">
+			<span class="glyphicon glyphicon-exclamation-sign" aria-hidden="true"></span>
+			<span class="sr-only">Error:</span> {{ error }}
+		      </div>
+		      {% endfor %}
+		      {% endif %}
+		      {% endwith %}
                       <div class="o-form-button-bar">
                         <input class="button button-primary" data-type="save" type="submit" value="Sign In">
                       </div>

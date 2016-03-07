@@ -8,6 +8,7 @@ import urlparse
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from flask import Flask
+from flask import flash
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -195,6 +196,10 @@ def login_with_password():
     r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
     result = r.json()
 
+    if 'errorCode' in result:
+        flash(result['errorSummary'])
+        return redirect(url_for('main_page', _external=True, _scheme='https'))
+
     redirect_uri = url_for(
         'sso_oidc',
         _external=True,
@@ -213,6 +218,9 @@ def login_with_password():
 
 @app.route("/sso/oidc", methods=['GET', 'POST'])
 def sso_oidc():
+    if 'error' in request.form:
+        flash(request.form['error_description'])
+        return redirect(url_for('main_page', _external=True, _scheme='https'))
     id_token = request.form['id_token']
     decoded = parse_jwt(id_token)
     user_id = decoded['sub']
