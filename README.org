@@ -615,7 +615,7 @@
     This is what it does:
     1. Checks the =id_token= header for a =kid= ("Key ID"). Fail validation
        if the =id_token= doesn't have a =kid=.
-    2. Use the =kid= to see if we have already fetched a public key for that =kid=.
+    2. Use the =kid= to see if we have previously cached the public key for that =kid=.
        If we already have a public key, then use that to validate the
        =id_token=.
 
@@ -635,14 +635,23 @@
           return public_keys[cleaned_key_id]
     #+END_SRC
     
+    #+BEGIN_QUOTE
+    *Note*: In this example, we are using a Python Dictionary called
+    =public_keys= as our hash. In production you should use whatever
+    existing caching infrastructure you have in place.
+    #+END_QUOTE
 
     If we haven't yet seen a public key matching the =kid=, then we
     fetch the public key as follows:
 
-    1. Take the URL from the =iss= claim in the =id_token= and append
-       =/.well-known/openid-configuration= to the end of that URL.
-    2. Fetch the URL above and take the =jwks_uri= key from the results.
-    3. Fetch the =jwks_uri= and, for each key in the result, it do
+    1. Take the URL from the =iss= claim in the =id_token=.
+    2. Validate that the domain name in the =iss= claim is a valid
+       Okta domain name.
+    3. If the domain name is valid, append
+       =/.well-known/openid-configuration= to the end of the URL in
+       the =iss= claim.
+    4. Fetch the URL above and take the =jwks_uri= key from the results.
+    6. Fetch the =jwks_uri= and, for each key in the result, it do
        the following:
        - Take the first element in the =x5c= value.
        - Base64 decode the DER encoded x509 certificate.
