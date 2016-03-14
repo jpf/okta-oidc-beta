@@ -26,7 +26,7 @@ import requests
 
 jws = PyJWS()
 
-not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
+not_alpha_numeric = re.compile('[^a-zA-Z0-9_-]+')
 
 required = {
     'base_url': {
