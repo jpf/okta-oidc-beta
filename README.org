@@ -62,9 +62,8 @@
        click "Add Applications"
     4. Click the "Create New App" button, which is on the left hand
        side of the screen.
-    5. Select "OpenID Connect" from the list of application
-       integration types.
-    6. *Important:* Select "Browser" as your "App Type"
+    5. *Important:* In the "Platform" section, select "Single Page App (SPA)"
+    6. Select "OpenID Connect" as the "Sign on method"
     7. Configure one or more "Redirect URIs" for your application.
     8. Click "Finish"
     9. Using the "People" or "Groups" tabs, assign people to your
@@ -72,7 +71,11 @@
        *Note:* Users will not be able to authenticate to your
        application if they are not assigned!
     10. Find your "Client ID" in the "Client Credentials" section of
-        the "Groups" tab. Use this Client ID in your demo application.
+        the "Groups" tab. 
+
+    The Client ID that you just obtained is what you will use to
+    configure the demo application in this guide, or to integrate your
+    application with Okta.
 *** [OLD] Okta OAuth Client ID 					   :noexport:
     At the moment, the only way to register an OAuth client with Okta
     is via Okta's =/oauth2/= API endpoint.
