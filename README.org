@@ -312,7 +312,7 @@
     };
   #+END_SRC
   Note: Other valid types for =authParams.scope= are: =openid=,
-  =email=, =profile=, =address=, =phone=. 
+  =email=, =profile=, =address=, =phone=, and =groups=.
 ** TODO Add =groups= when appropriate				   :noexport:
 ** TODO How to add Social Login buttons				   :noexport:
   #+BEGIN_SRC javascript :exports none

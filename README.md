@@ -249,7 +249,7 @@ to give you an `id_token`:
     };
 
 Note: Other valid types for `authParams.scope` are: `openid`,
-`email`, `profile`, `address`, `phone`. 
+`email`, `profile`, `address`, `phone`, and `groups`.
 
 # Use cases
 
