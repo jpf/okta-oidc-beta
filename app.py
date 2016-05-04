@@ -26,7 +26,7 @@ import requests
 
 jws = PyJWS()
 
-not_alpha_numeric = re.compile('[^a-zA-Z0-9_-]+')
+not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
 required = {
     'base_url': {
@@ -182,6 +182,7 @@ def create_authorize_url(**kwargs):
         base_url,
         urllib.urlencode(kwargs),
     )
+    print("Created URL: {}").format(redirect_url)
     return redirect_url
 
 
@@ -192,10 +193,12 @@ def login_with_password():
         'password': request.form['password'],
         }
 
+    print "/login"
     authn_url = "{}/api/v1/authn".format(okta['base_url'])
     r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
     result = r.json()
 
+    print result
     if 'errorCode' in result:
         flash(result['errorSummary'])
         return redirect(url_for('main_page', _external=True, _scheme='https'))
@@ -211,6 +214,8 @@ def login_with_password():
         scope='openid',
         response_type='id_token',
         response_mode='form_post',
+        nonce='FakeNonce',
+        state='FakeState',
         redirect_uri=redirect_uri,
         )
     return redirect(redirect_url)
@@ -263,6 +268,8 @@ def main_page():
         scope='openid',
         response_type='id_token',
         response_mode='form_post',
+        nonce='FakeNonce',
+        state='FakeState',
         redirect_uri=redirect_uri)
     target_origin = url_for('main_page', _external=True, _scheme='https')
     return render_template(
