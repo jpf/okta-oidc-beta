@@ -242,8 +242,22 @@ to give you an `id_token`:
             authParams: {
                 responseType: 'id_token',
                 responseMode: 'okta_post_message',
-                scope: ['openid']
-            }
+                scope: ['openid', 'groups']
+            },
+            idps: [
+                {
+                    'type': 'FACEBOOK',
+                    'id': '0oa5c17af3cHZliYY0h7'
+                },
+                {
+                    'type': 'GOOGLE',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                },
+                {
+                    'type': 'LINKEDIN',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                }
+            ]
         });
         return oktaSignIn;
     };
@@ -329,7 +343,7 @@ for more details on how Okta uses the OIDC request parameters.
 
 Below is an example of what this link might look like:
 
-    https://example.okta.com/oauth2/v1/authorize?redirect_uri=https%3A%2F%2Fexample.com%2Fsse%2Foidc&response_type=id_token&client_id=a0bcdEfGhIJkLmNOPQr1&scope=openid&response_mode=form_post
+    https://example.okta.com/oauth2/v1/authorize?nonce=FakeNonce&state=FakeState&redirect_uri=https%3A%2F%2Fexample.com%2Fsse%2Foidc&response_type=id_token&client_id=a0bcdEfGhIJkLmNOPQr1&scope=openid&response_mode=form_post
 
 ### Getting an `id_token` via the Okta Sign-In Widget
 
@@ -348,8 +362,22 @@ following two changes to your configuration of the Okta Sign-In Widget:
             authParams: {
                 responseType: 'id_token',
                 responseMode: 'okta_post_message',
-                scope: ['openid']
-            }
+                scope: ['openid', 'groups']
+            },
+            idps: [
+                {
+                    'type': 'FACEBOOK',
+                    'id': '0oa5c17af3cHZliYY0h7'
+                },
+                {
+                    'type': 'GOOGLE',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                },
+                {
+                    'type': 'LINKEDIN',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                }
+            ]
         });
 2.  Add a "SUCCESS" handler to the widget which will extract the
     `id_token` and pass it on to your application backend service.
@@ -414,6 +442,8 @@ Here is how this is done in the example application:
             scope='openid',
             response_type='id_token',
             response_mode='form_post',
+            nonce='FakeNonce',
+            state='FakeState',
             redirect_uri=redirect_uri,
             )
         return redirect(redirect_url)
@@ -487,7 +517,7 @@ setting in `parse_jwt`:
     validating the `issuer`:
     
         @responses.activate
-        @raises(jwt.InvalidIssuerError)
+        @raises(jwt.JWTClaimsError)
         def test_parse_jwt_invalid_issuer(self):
             id_token = self.create_jwt(claims={'iss': 'https://invalid.okta.com'})
             flask_app.parse_jwt(id_token)
@@ -511,7 +541,7 @@ setting in `parse_jwt`:
     validating the `audience`:
     
         @responses.activate
-        @raises(jwt.InvalidAudienceError)
+        @raises(jwt.JWTClaimsError)
         def test_parse_jwt_invalid_audience(self):
             id_token = self.create_jwt(claims={'aud': 'INVALID'})
             flask_app.parse_jwt(id_token)
@@ -537,16 +567,6 @@ the `x5c` key, then pipe that to `openssl` to extract the public key.
 
     JWKS_URI=`curl -s https://example.okta.com/.well-known/openid-configuration | egrep -o 'jwks_uri":"[^"]*' | cut -d '"' -f 3`;
     curl -s $JWKS_URI | egrep -o '"x5c":\["[^]]*' | cut -d '"' -f 4 | tr -d '\' | base64 -D | openssl x509 -inform DER -pubkey -noout
-
-    -----BEGIN PUBLIC KEY-----
-    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjKb91FLaoZe9/5NEMZrO
-    1eDn4hdrhtjrvsy+qO1QIbbdhRXJIJoE+qpHmgmq1gK28OZCV51xUAwk8ugw5p7/
-    m2wIarykHtXuBmhcFPkWez6N/yX30qvdOPPKUGqd05AoGcrzAW6fV07CRROU+5g1
-    RnTdNasLEMYaq0xPlmCMDjb3usyiafGyyrwg4+tndOTry4uMtF7LeTVLZo9Tnn2x
-    dJiytWWh+Rq5/KAn1mJ2GgwG8tp8o7SRf65c0LYQenN1d6vXX/Iimq/mg//B5CHP
-    zIaUrZfoL+2sbRIyQ5AePlDyn8Neg6sIsV9nTkPAcYvvQsS+/8xnfNq6np0zKbua
-    dQIDAQAB
-    -----END PUBLIC KEY-----
 
 ### Fetching public keys for OIDC in Python
 
@@ -605,8 +625,8 @@ fetch the public key as follows:
 
 Here an example in Python that does what is described above:
 
-    dirty_id_token = jwt.decode(id_token, verify=False)
-    dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+    unverified_claims = jwt.get_unverified_claims(id_token)
+    dirty_url = urlparse.urlparse(unverified_claims['iss'])
     if domain_name_for(dirty_url) not in allowed_domains:
         raise ValueError('The domain in the issuer claim is not allowed')
     cleaned_issuer = dirty_url.geturl()
@@ -619,11 +639,7 @@ Here an example in Python that does what is described above:
     jwks = r.json()
     for key in jwks['keys']:
         jwk_id = key['kid']
-        first_element = 0
-        jwk_x5c = key['x5c'][first_element]
-        der_data = base64.b64decode(str(jwk_x5c))
-        cert = x509.load_der_x509_certificate(der_data, default_backend())
-        public_keys[jwk_id] = cert.public_key()
+        public_keys[jwk_id] = key
 
 When extracting the `iss` claim from the `id_token` we strongly
 urge you to treat that value as untrusted and validate the
@@ -665,6 +681,7 @@ JSON Web Key specification](https://tools.ietf.org/html/draft-ietf-jose-json-web
 Finally, here is what the function looks like when it's all put
 together, with additional error handling code:
 
+    # FIXME: Rename since this is not about public keys anymore
     def fetch_jwt_public_key_for(id_token=None):
         if id_token is None:
             raise NameError('id_token is required')
@@ -679,8 +696,8 @@ together, with additional error handling code:
         if cleaned_key_id in public_keys:
             return public_keys[cleaned_key_id]
     
-        dirty_id_token = jwt.decode(id_token, verify=False)
-        dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+        unverified_claims = jwt.get_unverified_claims(id_token)
+        dirty_url = urlparse.urlparse(unverified_claims['iss'])
         if domain_name_for(dirty_url) not in allowed_domains:
             raise ValueError('The domain in the issuer claim is not allowed')
         cleaned_issuer = dirty_url.geturl()
@@ -693,11 +710,7 @@ together, with additional error handling code:
         jwks = r.json()
         for key in jwks['keys']:
             jwk_id = key['kid']
-            first_element = 0
-            jwk_x5c = key['x5c'][first_element]
-            der_data = base64.b64decode(str(jwk_x5c))
-            cert = x509.load_der_x509_certificate(der_data, default_backend())
-            public_keys[jwk_id] = cert.public_key()
+            public_keys[jwk_id] = key
     
         if cleaned_key_id in public_keys:
             return public_keys[cleaned_key_id]
