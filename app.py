@@ -1,30 +1,25 @@
-import base64
 import json
 import os
 import re
 import urllib
 import urlparse
 
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
 from flask import Flask
 from flask import flash
 from flask import redirect
 from flask import render_template
 from flask import request
 from flask import url_for
-from flask.ext.login import LoginManager
-from flask.ext.login import current_user
-from flask.ext.login import login_required
-from flask.ext.login import login_user
-from flask.ext.login import logout_user
-from jwt.api_jws import PyJWS
+from flask_login import LoginManager
+from flask_login import current_user
+from flask_login import login_required
+from flask_login import login_user
+from flask_login import logout_user
+from jose import jws
+from jose import jwt
 import flask
-import jwt
 import requests
 
-
-jws = PyJWS()
 
 not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
@@ -107,6 +102,7 @@ def domain_name_for(url):
     return sld + '.' + tld
 
 
+# FIXME: Rename since this is not about public keys anymore
 def fetch_jwt_public_key_for(id_token=None):
     if id_token is None:
         raise NameError('id_token is required')
@@ -121,8 +117,8 @@ def fetch_jwt_public_key_for(id_token=None):
     if cleaned_key_id in public_keys:
         return public_keys[cleaned_key_id]
 
-    dirty_id_token = jwt.decode(id_token, verify=False)
-    dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+    unverified_claims = jwt.get_unverified_claims(id_token)
+    dirty_url = urlparse.urlparse(unverified_claims['iss'])
     if domain_name_for(dirty_url) not in allowed_domains:
         raise ValueError('The domain in the issuer claim is not allowed')
     cleaned_issuer = dirty_url.geturl()
@@ -135,11 +131,7 @@ def fetch_jwt_public_key_for(id_token=None):
     jwks = r.json()
     for key in jwks['keys']:
         jwk_id = key['kid']
-        first_element = 0
-        jwk_x5c = key['x5c'][first_element]
-        der_data = base64.b64decode(str(jwk_x5c))
-        cert = x509.load_der_x509_certificate(der_data, default_backend())
-        public_keys[jwk_id] = cert.public_key()
+        public_keys[jwk_id] = key
 
     if cleaned_key_id in public_keys:
         return public_keys[cleaned_key_id]
@@ -182,7 +174,6 @@ def create_authorize_url(**kwargs):
         base_url,
         urllib.urlencode(kwargs),
     )
-    print("Created URL: {}").format(redirect_url)
     return redirect_url
 
 
@@ -193,12 +184,10 @@ def login_with_password():
         'password': request.form['password'],
         }
 
-    print "/login"
     authn_url = "{}/api/v1/authn".format(okta['base_url'])
     r = requests.post(authn_url, headers=headers, data=json.dumps(payload))
     result = r.json()
 
-    print result
     if 'errorCode' in result:
         flash(result['errorSummary'])
         return redirect(url_for('main_page', _external=True, _scheme='https'))

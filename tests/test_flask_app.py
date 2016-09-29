@@ -1,13 +1,17 @@
 from datetime import datetime
 import calendar
 import json
+import base64
+import struct
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from nose.tools import raises
-import jwt
+import jwt as py_jwt
+from jose import jwt
 import responses
 import unittest
+import logging
 
 import app as flask_app
 
@@ -55,6 +59,30 @@ BBet7Y2XCezOu809cQIDAQAB
 -----END PUBLIC KEY-----
 '''
 
+def long2intarr(long_int):
+    _bytes = []
+    while long_int:
+        long_int, r = divmod(long_int, 256)
+        _bytes.insert(0, r)
+    return _bytes
+
+
+def long_to_base64(n):
+    bys = long2intarr(n)
+    data = struct.pack('%sB' % len(bys), *bys)
+    if not len(data):
+        data = '\x00'
+    s = base64.urlsafe_b64encode(data).rstrip(b'=')
+    return s.decode("ascii")
+
+
+public_key_obj = serialization.load_pem_public_key(
+    public_key,
+    backend=default_backend())
+
+public_key_numbers = public_key_obj.public_numbers()
+exponent = long_to_base64(public_key_numbers.e)
+modulus = long_to_base64(public_key_numbers.n)
 
 class TestFlaskApp(unittest.TestCase):
 
@@ -67,11 +95,14 @@ class TestFlaskApp(unittest.TestCase):
         flask_app.okta = self.okta
         flask_app.app.config['SECRET_KEY'] = "TESTING"
         self.app = flask_app.app.test_client()
-        x5c_certificate = ''.join(certificate.split("\n")[2:-2])
         self.oauth2_v1_keys_response = {
             'keys': [{
+                'e': exponent,
+                'n': modulus,
                 'kid': 'TESTKID',
-                'x5c': [x5c_certificate, 'FAKE', 'FAKE']
+                'kty': 'RSA',
+                'alg': 'RS256',
+                'use': 'sig'
                 }]
             }
         for domain in ['example.okta.com',
@@ -118,7 +149,7 @@ class TestFlaskApp(unittest.TestCase):
         headers = {}
         if kid:
             headers['kid'] = kid
-        return jwt.encode(
+        return py_jwt.encode(
             defaults,
             private_key,
             algorithm='RS256',
@@ -143,7 +174,9 @@ class TestFlaskApp(unittest.TestCase):
     def test_sso_via_id_token_invalid(self):
         id_token = self.create_jwt(claims={'aud': 'invalid'})
         print id_token
+        logging.disable(logging.CRITICAL)
         rv = self.app.post('/sso/oidc', data={'id_token': id_token})
+        logging.disable(logging.NOTSET)
         self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
 
     @responses.activate
@@ -153,13 +186,13 @@ class TestFlaskApp(unittest.TestCase):
         self.assertEquals('00u0abcdefGHIJKLMNOP', rv['sub'])
 
     @responses.activate
-    @raises(jwt.InvalidAudienceError)
+    @raises(jwt.JWTClaimsError)
     def test_parse_jwt_invalid_audience(self):
         id_token = self.create_jwt(claims={'aud': 'INVALID'})
         flask_app.parse_jwt(id_token)
 
     @responses.activate
-    @raises(jwt.InvalidIssuerError)
+    @raises(jwt.JWTClaimsError)
     def test_parse_jwt_invalid_issuer(self):
         id_token = self.create_jwt(claims={'iss': 'https://invalid.okta.com'})
         flask_app.parse_jwt(id_token)

@@ -293,15 +293,29 @@
 
   #+NAME: init-okta-sign-in-for-oidc
   #+BEGIN_SRC javascript :exports none
-    var oktaSignIn = new OktaSignIn({
-        baseUrl: baseUrl,
-        clientId: clientId,
-        authParams: {
-            responseType: 'id_token',
-            responseMode: 'okta_post_message',
-            scope: ['openid']
-        }
-    });
+        var oktaSignIn = new OktaSignIn({
+            baseUrl: baseUrl,
+            clientId: clientId,
+            authParams: {
+                responseType: 'id_token',
+                responseMode: 'okta_post_message',
+                scope: ['openid', 'groups']
+            },
+            idps: [
+                {
+                    'type': 'FACEBOOK',
+                    'id': '0oa5c17af3cHZliYY0h7'
+                },
+                {
+                    'type': 'GOOGLE',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                },
+                {
+                    'type': 'LINKEDIN',
+                    'id': '0oa5c17af3cHZliYY0h8'
+                }
+            ]
+        });
   #+END_SRC
 
   #+NAME: setup-okta-sign-in
@@ -421,6 +435,8 @@
           scope='openid',
           response_type='id_token',
           response_mode='form_post',
+          nonce='FakeNonce',
+          state='FakeState',
           redirect_uri="https://example.com/sse/oidc",
       )
 
@@ -550,7 +566,7 @@
        #+NAME: test_parse_jwt_invalid_issuer
        #+BEGIN_SRC python :padline no
          @responses.activate
-         @raises(jwt.InvalidIssuerError)
+         @raises(jwt.JWTClaimsError)
          def test_parse_jwt_invalid_issuer(self):
              id_token = self.create_jwt(claims={'iss': 'https://invalid.okta.com'})
              flask_app.parse_jwt(id_token)
@@ -579,7 +595,7 @@
        #+NAME: test_parse_jwt_invalid_audience
        #+BEGIN_SRC python :padline no
          @responses.activate
-         @raises(jwt.InvalidAudienceError)
+         @raises(jwt.JWTClaimsError)
          def test_parse_jwt_invalid_audience(self):
              id_token = self.create_jwt(claims={'aud': 'INVALID'})
              flask_app.parse_jwt(id_token)
@@ -689,8 +705,8 @@
 
     #+NAME: fetch_public_key_via_jwks
     #+BEGIN_SRC python :padline no
-      dirty_id_token = jwt.decode(id_token, verify=False)
-      dirty_url = urlparse.urlparse(dirty_id_token['iss'])
+      unverified_claims = jwt.get_unverified_claims(id_token)
+      dirty_url = urlparse.urlparse(unverified_claims['iss'])
       if domain_name_for(dirty_url) not in allowed_domains:
           raise ValueError('The domain in the issuer claim is not allowed')
       cleaned_issuer = dirty_url.geturl()
@@ -703,11 +719,7 @@
       jwks = r.json()
       for key in jwks['keys']:
           jwk_id = key['kid']
-          first_element = 0
-          jwk_x5c = key['x5c'][first_element]
-          der_data = base64.b64decode(str(jwk_x5c))
-          cert = x509.load_der_x509_certificate(der_data, default_backend())
-          public_keys[jwk_id] = cert.public_key()
+          public_keys[jwk_id] = key
     #+END_SRC
 
 
@@ -758,6 +770,7 @@
 
     #+NAME: fetch-jwt-public-key-for
     #+BEGIN_SRC python :noweb yes :padline no
+      # FIXME: Rename since this is not about public keys anymore
       def fetch_jwt_public_key_for(id_token=None):
           if id_token is None:
               raise NameError('id_token is required')
@@ -1022,6 +1035,8 @@
               scope='openid',
               response_type='id_token',
               response_mode='form_post',
+              nonce='FakeNonce',
+              state='FakeState',
               redirect_uri=redirect_uri)
           target_origin = url_for('main_page', _external=True, _scheme='https')
           return render_template(
@@ -1144,6 +1159,8 @@
               scope='openid',
               response_type='id_token',
               response_mode='form_post',
+              nonce='FakeNonce',
+              state='FakeState',
               redirect_uri=redirect_uri,
               )
           return redirect(redirect_url)
@@ -1192,6 +1209,9 @@
           return redirect(url_for('logged_in', _external=True, _scheme='https'))
     #+END_SRC
 
+    See [[http://stackoverflow.com/a/5255760][this comment]] on StackOverflow for details on why I'm using
+    =logging.disable(logging.CRITICAL)= below:
+
     #+NAME: test_sso_via_id_token
     #+BEGIN_SRC python
       @responses.activate
@@ -1207,7 +1227,9 @@
       def test_sso_via_id_token_invalid(self):
           id_token = self.create_jwt(claims={'aud': 'invalid'})
           print id_token
+          logging.disable(logging.CRITICAL)
           rv = self.app.post('/sso/oidc', data={'id_token': id_token})
+          logging.disable(logging.NOTSET)
           self.assertEquals("500 INTERNAL SERVER ERROR", rv.status)
     #+END_SRC
 *** /users/me
@@ -1227,29 +1249,26 @@
 *** Imports
   #+NAME: imports
   #+BEGIN_SRC python
-    import base64
     import json
     import os
     import re
     import urllib
     import urlparse
 
-    from cryptography import x509
-    from cryptography.hazmat.backends import default_backend
     from flask import Flask
     from flask import flash
     from flask import redirect
     from flask import render_template
     from flask import request
     from flask import url_for
-    from flask.ext.login import LoginManager
-    from flask.ext.login import current_user
-    from flask.ext.login import login_required
-    from flask.ext.login import login_user
-    from flask.ext.login import logout_user
-    from jwt.api_jws import PyJWS
+    from flask_login import LoginManager
+    from flask_login import current_user
+    from flask_login import login_required
+    from flask_login import login_user
+    from flask_login import logout_user
+    from jose import jws
+    from jose import jwt
     import flask
-    import jwt
     import requests
   #+END_SRC
 *** Setup Flask-Login
@@ -1306,8 +1325,6 @@
   #+BEGIN_SRC python :tangle app.py :noweb yes :exports none :padline no
     <<imports>>
 
-
-    jws = PyJWS()
 
     not_alpha_numeric = re.compile('[^a-zA-Z0-9]+')
 
@@ -1548,24 +1565,56 @@
          headers = {}
          if kid:
              headers['kid'] = kid
-         return jwt.encode(
+         return py_jwt.encode(
              defaults,
              private_key,
              algorithm='RS256',
              headers=headers)
    #+END_SRC
 
+   #+NAME: convert-pem-to-jwk
+   #+BEGIN_SRC python
+     def long2intarr(long_int):
+         _bytes = []
+         while long_int:
+             long_int, r = divmod(long_int, 256)
+             _bytes.insert(0, r)
+         return _bytes
+
+
+     def long_to_base64(n):
+         bys = long2intarr(n)
+         data = struct.pack('%sB' % len(bys), *bys)
+         if not len(data):
+             data = '\x00'
+         s = base64.urlsafe_b64encode(data).rstrip(b'=')
+         return s.decode("ascii")
+
+
+     public_key_obj = serialization.load_pem_public_key(
+         public_key,
+         backend=default_backend())
+
+     public_key_numbers = public_key_obj.public_numbers()
+     exponent = long_to_base64(public_key_numbers.e)
+     modulus = long_to_base64(public_key_numbers.n)
+   #+END_SRC
+
    #+BEGIN_SRC python :tangle tests/test_flask_app.py :noweb yes :exports none :padline no
      from datetime import datetime
      import calendar
      import json
+     import base64
+     import struct
 
      from cryptography.hazmat.backends import default_backend
      from cryptography.hazmat.primitives import serialization
      from nose.tools import raises
-     import jwt
+     import jwt as py_jwt
+     from jose import jwt
      import responses
      import unittest
+     import logging
 
      import app as flask_app
 
@@ -1581,6 +1630,7 @@
      <<public_key_for_testing>>
      '''
 
+     <<convert-pem-to-jwk>>
 
      class TestFlaskApp(unittest.TestCase):
 
@@ -1593,11 +1643,14 @@
              flask_app.okta = self.okta
              flask_app.app.config['SECRET_KEY'] = "TESTING"
              self.app = flask_app.app.test_client()
-             x5c_certificate = ''.join(certificate.split("\n")[2:-2])
              self.oauth2_v1_keys_response = {
                  'keys': [{
+                     'e': exponent,
+                     'n': modulus,
                      'kid': 'TESTKID',
-                     'x5c': [x5c_certificate, 'FAKE', 'FAKE']
+                     'kty': 'RSA',
+                     'alg': 'RS256',
+                     'use': 'sig'
                      }]
                  }
              for domain in ['example.okta.com',
